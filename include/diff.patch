@@ -1,0 +1,3162 @@
+只在 ../../zesti/include/klee 存在：CFGPath.h
+diff -ur ../../zesti/include/klee/CommandLine.h klee/CommandLine.h
+--- ../../zesti/include/klee/CommandLine.h	2017-09-18 15:21:39.677896100 +0800
++++ klee/CommandLine.h	2017-09-14 19:58:57.000000000 +0800
+@@ -1,40 +1,40 @@
+ /*
+- * FIXME: This is a temporary solution.
+- * This header groups command line options and associated data that is common
+- * for klee and kleaver.
++ * This header groups command line options declarations and associated data
++ * that is common for klee and kleaver.
+  */
+ 
+-#ifndef COMMANDLINE_H
+-#define	COMMANDLINE_H
++#ifndef KLEE_COMMANDLINE_H
++#define KLEE_COMMANDLINE_H
+ 
+ #include "llvm/Support/CommandLine.h"
++#include "klee/Config/config.h"
+ 
+-namespace {
++namespace klee {
+ 
+-#define ALL_QUERIES_SMT2_FILE_NAME      "all-queries.smt2"
+-#define SOLVER_QUERIES_SMT2_FILE_NAME   "solver-queries.smt2"
+-#define ALL_QUERIES_PC_FILE_NAME        "all-queries.pc"
+-#define SOLVER_QUERIES_PC_FILE_NAME     "solver-queries.pc"
+-    
+-llvm::cl::opt<bool>
+-UseFastCexSolver("use-fast-cex-solver",
+-		 llvm::cl::init(false),
+-		 llvm::cl::desc("(default=off)"));
++extern llvm::cl::opt<bool> UseFastCexSolver;
++
++extern llvm::cl::opt<bool> UseCexCache;
++
++extern llvm::cl::opt<bool> UseCache;
++
++extern llvm::cl::opt<bool> UseIndependentSolver; 
++
++extern llvm::cl::opt<bool> DebugValidateSolver;
+   
+-llvm::cl::opt<int>
+-MinQueryTimeToLog("min-query-time-to-log",
+-                  llvm::cl::init(0),
+-                  llvm::cl::value_desc("milliseconds"),
+-                  llvm::cl::desc("Set time threshold (in ms) for queries logged in files. "
+-                                 "Only queries longer than threshold will be logged. (default=0). "
+-                                 "Set this param to a negative value to log timeouts only."));
++extern llvm::cl::opt<int> MinQueryTimeToLog;
++
++extern llvm::cl::opt<double> MaxCoreSolverTime;
++
++extern llvm::cl::opt<bool> UseForkedCoreSolver;
++
++extern llvm::cl::opt<bool> CoreSolverOptimizeDivides;
+ 
+ ///The different query logging solvers that can switched on/off
+ enum QueryLoggingSolverType
+ {
+-    ALL_PC, ///< Log all queries (un-optimised) in .pc (KQuery) format
+-    ALL_SMTLIB, ///< Log all queries (un-optimised)  .smt2 (SMT-LIBv2) format
+-    SOLVER_PC, ///< Log queries passed to solver (optimised) in .pc (KQuery) format
++    ALL_PC,       ///< Log all queries (un-optimised) in .pc (KQuery) format
++    ALL_SMTLIB,   ///< Log all queries (un-optimised)  .smt2 (SMT-LIBv2) format
++    SOLVER_PC,    ///< Log queries passed to solver (optimised) in .pc (KQuery) format
+     SOLVER_SMTLIB ///< Log queries passed to solver (optimised) in .smt2 (SMT-LIBv2) format
+ };
+ 
+@@ -42,29 +42,30 @@
+  * if an option is set. Unfortunately with gcc4.7 cl::bits<> is broken with LLVM2.9 and I doubt everyone
+  * wants to patch their copy of LLVM just for these options.
+  */
+-llvm::cl::list<QueryLoggingSolverType> queryLoggingOptions(
+-    "use-query-log",
+-    llvm::cl::desc("Log queries to a file. Multiple options can be specified seperate by a comma. By default nothing is logged."),
+-    llvm::cl::values(
+-        clEnumValN(ALL_PC,"all:pc","All queries in .pc (KQuery) format"),
+-        clEnumValN(ALL_SMTLIB,"all:smt2","All queries in .smt2 (SMT-LIBv2) format"),
+-        clEnumValN(SOLVER_PC,"solver:pc","All queries reaching the solver in .pc (KQuery) format"),
+-        clEnumValN(SOLVER_SMTLIB,"solver:smt2","All queries reaching the solver in .pc (SMT-LIBv2) format"),
+-        clEnumValEnd
+-	),
+-    llvm::cl::CommaSeparated
+-);
++extern llvm::cl::list<QueryLoggingSolverType> queryLoggingOptions;
+ 
++#ifdef SUPPORT_METASMT
++
++enum MetaSMTBackendType
++{
++    METASMT_BACKEND_NONE,
++    METASMT_BACKEND_STP,
++    METASMT_BACKEND_Z3,
++    METASMT_BACKEND_BOOLECTOR
++};
++
++extern llvm::cl::opt<klee::MetaSMTBackendType> UseMetaSMT;
++
++#endif /* SUPPORT_METASMT */
++
++//A bit of ugliness so we can use cl::list<> like cl::bits<>, see queryLoggingOptions
++template <typename T>
++static bool optionIsSet(llvm::cl::list<T> list, T option)
++{
++    return std::find(list.begin(), list.end(), option) != list.end();
+ }
+ 
+-namespace klee { 
+-  //A bit of ugliness so we can use cl::list<> like cl::bits<>, see queryLoggingOptions
+-  template <typename T>
+-  static bool optionIsSet(llvm::cl::list<T> list, T option)
+-  {
+-	  return std::find(list.begin(), list.end(), option) != list.end();
+-  }
+ }
+ 
+-#endif	/* COMMANDLINE_H */
++#endif	/* KLEE_COMMANDLINE_H */
+ 
+只在 klee 存在：Common.h
+只在 ../../zesti/include/klee/Config 存在：config.h
+diff -ur ../../zesti/include/klee/Config/config.h.in klee/Config/config.h.in
+--- ../../zesti/include/klee/Config/config.h.in	2017-09-18 15:21:39.678401700 +0800
++++ klee/Config/config.h.in	2017-09-14 19:58:57.000000000 +0800
+@@ -6,18 +6,9 @@
+ /* Enable KLEE DEBUG checks */
+ #undef ENABLE_KLEE_DEBUG
+ 
+-/* Enable metaSMT API */
+-#undef ENABLE_METASMT
+-
+-/* Using Z3 Solver backend */
+-#undef ENABLE_Z3
+-
+ /* Does the platform use __ctype_b_loc, etc. */
+ #undef HAVE_CTYPE_EXTERNALS
+ 
+-/* Define to 1 if you have the <gperftools/malloc_extension.h> header file. */
+-#undef HAVE_GPERFTOOLS_MALLOC_EXTENSION_H
+-
+ /* Define to 1 if you have the <inttypes.h> header file. */
+ #undef HAVE_INTTYPES_H
+ 
+@@ -66,22 +57,6 @@
+ /* Define to 1 if you have the <unistd.h> header file. */
+ #undef HAVE_UNISTD_H
+ 
+-/* Z3 needs a Z3_context passed to Z3_get_error_msg() */
+-#undef HAVE_Z3_GET_ERROR_MSG_NEEDS_CONTEXT
+-
+-/* Define to 1 if you have the <zlib.h> header file. */
+-#undef HAVE_ZLIB_H
+-
+-/* Enable time stamping the sources */
+-#undef KLEE_ENABLE_TIMESTAMP
+-
+-/* Define to empty or 'const' depending on how SELinux qualifies its security
+-   context parameters. */
+-#undef KLEE_SELINUX_CTX_CONST
+-
+-/* Path to KLEE's uClibc */
+-#undef KLEE_UCLIBC
+-
+ /* LLVM version is release (instead of development) */
+ #undef LLVM_IS_RELEASE
+ 
+@@ -115,4 +90,10 @@
+ /* Define to 1 if you have the ANSI C header files. */
+ #undef STDC_HEADERS
+ 
++/* klee-uclibc is supported */
++#undef SUPPORT_KLEE_UCLIBC
++
++/* Supporting metaSMT API */
++#undef SUPPORT_METASMT
++
+ #endif
+只在 ../../zesti/include/klee/Config 存在：config.h.in~
+diff -ur ../../zesti/include/klee/Constraints.h klee/Constraints.h
+--- ../../zesti/include/klee/Constraints.h	2017-09-18 15:21:39.678644800 +0800
++++ klee/Constraints.h	2017-09-14 19:58:17.000000000 +0800
+@@ -11,7 +11,6 @@
+ #define KLEE_CONSTRAINTS_H
+ 
+ #include "klee/Expr.h"
+-#include <vector>
+ 
+ // FIXME: Currently we use ConstraintManager for two things: to pass
+ // sets of constraints around, and to optimize constraints. We should
+@@ -20,7 +19,7 @@
+ namespace klee {
+ 
+ class ExprVisitor;
+-
++  
+ class ConstraintManager {
+ public:
+   typedef std::vector< ref<Expr> > constraints_ty;
+@@ -38,64 +37,26 @@
+ 
+   typedef std::vector< ref<Expr> >::const_iterator constraint_iterator;
+ 
+-  // given a constraint which is known to be valid, attempt to
++  // given a constraint which is known to be valid, attempt to 
+   // simplify the existing constraint set
+   void simplifyForValidConstraint(ref<Expr> e);
+ 
+   ref<Expr> simplifyExpr(ref<Expr> e) const;
+ 
+   void addConstraint(ref<Expr> e);
+-  void addConstraint(ref<Expr> e, bool simplify);
+-
+-    //buptshadow
+-  void removeConstraint(ConstraintManager manager)
+-  {
+-      std::vector< ref<Expr> >::iterator  ie=manager.get_end();
+-    for(vector< ref<Expr> >::iterator ci=manager.get_begin();ci!=ie;++ci)
+-    {
+-        vector< ref<Expr> >::iterator it=find(constraints.begin(),constraints.end(),*ci);
+-        if(it!=constraints.end())
+-        {
+-            constraints.erase(it);
+-        }
+-    }
+-  }
+-
+-  void swap(ConstraintManager manager){
+-    constraints.swap(manager.constraints);
+-  }
+-  void clearConstraints()
+-  {
+-      vector< ref<Expr> >().swap(constraints);
+-  }
+-
+-
++  
+   bool empty() const {
+     return constraints.empty();
+   }
+   ref<Expr> back() const {
+     return constraints.back();
+   }
+-  //buptshadow
+-  std::vector< ref<Expr> >::iterator get_begin() {
+-      return constraints.begin();
+-  }
+-  std::vector< ref<Expr> >::iterator get_end() {
+-      return constraints.end();
+-  }
+-  void mergeConstraints(ConstraintManager oldcon,ConstraintManager newcon);
+-
+-
+   constraint_iterator begin() const {
+     return constraints.begin();
+   }
+   constraint_iterator end() const {
+     return constraints.end();
+   }
+-
+-  void pop_back() {
+-      constraints.pop_back();
+-  }
+   size_t size() const {
+     return constraints.size();
+   }
+@@ -103,14 +64,14 @@
+   bool operator==(const ConstraintManager &other) const {
+     return constraints == other.constraints;
+   }
+-
++  
+ private:
+   std::vector< ref<Expr> > constraints;
+ 
+   // returns true iff the constraints were modified
+   bool rewriteConstraints(ExprVisitor &visitor);
+ 
+-  void addConstraintInternal(ref<Expr> e, bool simplify);
++  void addConstraintInternal(ref<Expr> e);
+ };
+ 
+ }
+只在 ../../zesti/include/klee 存在：DoubleArrayTrie.h
+diff -ur ../../zesti/include/klee/ExecutionState.h klee/ExecutionState.h
+--- ../../zesti/include/klee/ExecutionState.h	2017-09-18 15:21:39.678967600 +0800
++++ klee/ExecutionState.h	2017-09-14 19:58:57.000000000 +0800
+@@ -19,38 +19,27 @@
+ #include "klee/Internal/Module/KInstIterator.h"
+ 
+ #include <map>
+-#include <hash_set>
+ #include <set>
+ #include <vector>
+-#include <sstream>
+-#include "klee/Internal/ADT/KTest.h"
+-#include "klee/CFGPath.h"
+-#include <string.h>
+-#include "llvm/BasicBlock.h"
+-#include "klee/DoubleArrayTrie.h"
+ 
+-using namespace llvm;
+ namespace klee {
+-  class Array;
+-  class CallPathNode;
+-  struct Cell;
+-  struct KFunction;
+-  struct KInstruction;
+-  class MemoryObject;
+-  class PTreeNode;
+-  struct InstructionInfo;
++class Array;
++class CallPathNode;
++struct Cell;
++struct KFunction;
++struct KInstruction;
++class MemoryObject;
++class PTreeNode;
++struct InstructionInfo;
+ 
+-std::ostream &operator<<(std::ostream &os, const MemoryMap &mm);
++llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const MemoryMap &mm);
+ 
+ struct StackFrame {
+   KInstIterator caller;
+   KFunction *kf;
+   CallPathNode *callPathNode;
+ 
+-  bool concernFlag;
+-  //std::vector<ObjectPair> concernArgsAndGVals;
+-  std::map<const MemoryObject*,bool> concernArgsAndGVals;
+-  std::vector<const MemoryObject*> allocas;
++  std::vector<const MemoryObject *> allocas;
+   Cell *locals;
+ 
+   /// Minimum distance to an uncovered instruction once the function
+@@ -66,169 +55,109 @@
+   // does not pass vaarg through as expected). VACopy is lowered inside
+   // of intrinsic lowering.
+   MemoryObject *varargs;
+-  std::map<size_t,size_t> varargsMap;
+-  bool argShadow;
+-  ref<Expr> addrOfShadow;
+ 
+   StackFrame(KInstIterator caller, KFunction *kf);
+   StackFrame(const StackFrame &s);
+   ~StackFrame();
+ };
+ 
++/// @brief ExecutionState representing a path under exploration
+ class ExecutionState {
+ public:
+   typedef std::vector<StackFrame> stack_ty;
+ 
+ private:
+   // unsupported, use copy constructor
+-  ExecutionState &operator=(const ExecutionState&);
+-  std::map< std::string, std::string > fnAliases;
++  ExecutionState &operator=(const ExecutionState &);
+ 
+-public:
+-  bool fakeState;
+-  // Are we currently underconstrained?  Hack: value is size to make fake
+-  // objects.
+-  unsigned underConstrained;
+-  unsigned depth;
++  std::map<std::string, std::string> fnAliases;
+ 
+-//buptshadow
+-  bool completeSeed;
+-  bool haschanged; //mark that change has happened before this statement
+-  bool changePoint; //mark that the branch is caused by change statement
+-  enum changestate{blank=0,oldversion,newversion};
+-  changestate ChangeBB;//mark the basic block to be executed
+-  bool change_fork;
+-  ConstraintManager pathcond;
+-  bool needTestCase;
+-  bool ctlordata; //control flow false   data flow true
+-  bool ctlAffected;
+-  bool isInBound;
+-  string splitfunc;
+-  enum transmode{normal=0,exitcall,unreachable,err};
+-  transmode tmode;
+-  bool ntmode;
+-  ref<Expr> old_exitcode,new_exitcode;
++public:
++  // Execution - Control Flow specific
+ 
++  /// @brief Pointer to instruction to be executed after the current
++  /// instruction
++  KInstIterator pc;
+ 
++  /// @brief Pointer to instruction which is currently executed
++  KInstIterator prevPC;
+ 
+-  string newPathRec;
+- void expandPath(string dir){
+-		newPathRec+= dir;
+- };
+-  void clearPath()
+-  {
+-	newPathRec="";
+-  };
+-  size_t mergePoint; //record merge point
+-  size_t retPoint;
+-
+-  enum executeFlag{old_ver,new_ver,before_split,unified_blank};
+-  executeFlag exeFlag;
+-  KInstIterator new_pc;
+-  int splitframe;
+-
+-
+-  typedef std::map<std::pair<size_t,size_t>,bool > condsWithMG;
+-  std::map<size_t,condsWithMG> new_pathSequential;
+-  std::map<size_t,bool> mergeSet;
+-  std::set<size_t> loopPoint;
+-  std::vector< std::pair<size_t, int> > inloop;
+-
+-  std::string errmsg_old;
+-  KInstIterator errpc_old;
+-
+-  std::vector<const MemoryObject*> oldFreed;
+-  std::vector<const MemoryObject*> newFreed;
+-
+-//KInstIterator changedBrPC;
+-//ref<Expr> oldValue;
+-  bool comflag,quitflag,inverflag;
+-  std::vector< ref<Expr> >collcond; //Store the final condition for old version and new version accoring to changestate
+-  std::vector< std::pair<KInstIterator,ExecutionState&> >bbstack;
+-  // Are we encounter a change annotation in this state? Create a flag for the state that meet a change macro function.
+-  // pc - pointer to current instruction stream
+-  KInstIterator pc, prevPC;
++  /// @brief Stack representing the current instruction stream
+   stack_ty stack;
++
++  /// @brief Remember from which Basic Block control flow arrived
++  /// (i.e. to select the right phi values)
++  unsigned incomingBBIndex;
++
++  // Overall state of the state - Data specific
++
++  /// @brief Address space used by this state (e.g. Global and Heap)
++  AddressSpace addressSpace;
++
++  /// @brief Constraints collected so far
+   ConstraintManager constraints;
++
++  /// Statistics and information
++
++  /// @brief Costs for all queries issued for this state, in seconds
+   mutable double queryCost;
++
++  /// @brief Weight assigned for importance of this state.  Can be
++  /// used for searchers to decide what paths to explore
+   double weight;
+-  AddressSpace addressSpace;
+-  TreeOStream pathOS, symPathOS;
++
++  /// @brief Exploration depth, i.e., number of times KLEE branched for this state
++  unsigned depth;
++
++  /// @brief History of complete path: represents branches taken to
++  /// reach/create this state (both concrete and symbolic)
++  TreeOStream pathOS;
++
++  /// @brief History of symbolic path: represents symbolic branches
++  /// taken to reach/create this state
++  TreeOStream symPathOS;
++
++  /// @brief Counts how many instructions were executed since the last new
++  /// instruction was covered.
+   unsigned instsSinceCovNew;
++
++  /// @brief Whether a new instruction was covered in this state
+   bool coveredNew;
+ 
+-/// Disables forking, set by user code.
+-bool forkDisabled;
++  /// @brief Disables forking for this state. Set by user code
++  bool forkDisabled;
++
++  /// @brief Set containing which lines in which files are covered by this state
++  std::map<const std::string *, std::set<unsigned> > coveredLines;
+ 
+-std::map<const std::string*, std::set<unsigned> > coveredLines;
++  /// @brief Pointer to the process tree of the current state
+   PTreeNode *ptreeNode;
+ 
+-/// ordered list of symbolics: used to generate test cases.
+-//
+-// FIXME: Move to a shared list structure (not critical).
+-std::vector< std::pair<const MemoryObject*, const Array*> > symbolics;
+-
+-/// Set of used array names.  Used to avoid collisions.
+-std::set<std::string> arrayNames;
+-
+-// Used by the checkpoint/rollback methods for fake objects.
+-// FIXME: not freeing things on branch deletion.
+-MemoryMap shadowObjects;
+-
+-unsigned incomingBBIndex;
+-// Used in ZEST mode via enable/disable_seeding intrinsics.
+-// XXX not completely orthogonal with forkDisabled?
+-bool symbexEnabled;
+-unsigned seedingTTL;
+-unsigned seedingInstExecuted;
+-
+-bool lastInstructionGEP;
+-bool markForDeletion;
+-double* branchTime;
+-// Set via klee_enable_symbex to interleave the execution of the
+-// next forked path with the concrete path
+-bool nextForkInterleaved;
+-// Used in ZEST patch mode. When set all instructions are
+-// sensitive
+-bool inPatch;
+-
+-std::string getFnAlias(std::string fn);
+-void addFnAlias(std::string old_fn, std::string new_fn);
+-void removeFnAlias(std::string fn);
++  /// @brief Ordered list of symbolics: used to generate test cases.
++  //
++  // FIXME: Move to a shared list structure (not critical).
++  std::vector<std::pair<const MemoryObject *, const Array *> > symbolics;
++
++  /// @brief Set of used array names for this state.  Used to avoid collisions.
++  std::set<std::string> arrayNames;
++
++  std::string getFnAlias(std::string fn);
++  void addFnAlias(std::string old_fn, std::string new_fn);
++  void removeFnAlias(std::string fn);
+ 
+ private:
+-ExecutionState() : fakeState(false), underConstrained(0), ptreeNode(0), inPatch(false){}
++  ExecutionState() : ptreeNode(0) {}
+ 
+ public:
+-ExecutionState(KFunction *kf);
++  ExecutionState(KFunction *kf);
++
++  // XXX total hack, just used to make a state so solver can
++  // use on structure
++  ExecutionState(const std::vector<ref<Expr> > &assumptions);
+ 
+-// XXX total hack, just used to make a state so solver can
+-// use on structure
+-ExecutionState(const std::vector<ref<Expr> > &assumptions);
+-
+-ExecutionState(const ExecutionState& state);
+-
+-~ExecutionState();
+-
+-  void markHasChanged()     { haschanged=true;}
+-  void removeHasChanged()   { haschanged=false;}
+-  bool hasChangedBefore()   { return haschanged;}
+-  bool markAsChange()       { return changePoint=true;}
+-  bool removeChangeMark()   { return changePoint=false;}
+-  bool isChanged()          { return changePoint==true;}
+-  bool getChangePoint()     { return changePoint;}
+-  changestate getChangeBB() { return ChangeBB;}
+-  void intoOldChangeBB()    { ChangeBB=oldversion;}
+-  void intoNewChangeBB()    { ChangeBB=newversion;}
+-  void leaveChangeBB()      { ChangeBB=blank;}
+-  bool isOldChangeBB()      { return ChangeBB==oldversion;}
+-  bool isNewChangeBB()      { return ChangeBB==newversion;}
+-  void intoOldExecution()   { exeFlag=old_ver; }
+-  void intoNewExecution()   { exeFlag=new_ver; }
+-  void intoBeforeSplitExecution()   { exeFlag=before_split; }
+-  bool isOldExecution()     { return exeFlag==old_ver; }
+-  bool isNewExecution()     { return exeFlag==new_ver; }
+-  bool isBeforeSplitExecution()     { return exeFlag==before_split; }
++  ExecutionState(const ExecutionState &state);
++
++  ~ExecutionState();
+ 
+   ExecutionState *branch();
+ 
+@@ -236,17 +165,11 @@
+   void popFrame();
+ 
+   void addSymbolic(const MemoryObject *mo, const Array *array);
+-  void addConstraint(ref<Expr> e) {
+-    constraints.addConstraint(e);
+-  }
+-  void addConstraint(ref<Expr> e, bool simplify) {
+-    constraints.addConstraint(e, simplify);
+-  }
++  void addConstraint(ref<Expr> e) { constraints.addConstraint(e); }
+ 
+   bool merge(const ExecutionState &b);
+-  void dumpStack(std::ostream &out) const;
++  void dumpStack(llvm::raw_ostream &out) const;
+ };
+-
+ }
+ 
+ #endif
+diff -ur ../../zesti/include/klee/Expr.h klee/Expr.h
+--- ../../zesti/include/klee/Expr.h	2017-09-18 15:21:39.679342300 +0800
++++ klee/Expr.h	2017-09-18 15:00:38.000000000 +0800
+@@ -17,19 +17,16 @@
+ #include "llvm/ADT/APFloat.h"
+ #include "llvm/ADT/DenseSet.h"
+ #include "llvm/ADT/SmallVector.h"
++#include "llvm/Support/raw_ostream.h"
+ 
++#include <sstream>
+ #include <set>
+ #include <vector>
+-#include <iosfwd> // FIXME: Remove this!!!
+-#include <iostream>
+-
+-#define DEBUG_PP 0
+-#define DEBUG_ORIFLAG 0
+-
+-using namespace std;
++#include <map>
+ 
+ namespace llvm {
+   class Type;
++  class raw_ostream;
+ }
+ 
+ namespace klee {
+@@ -91,8 +88,6 @@
+ 
+ class Expr {
+ public:
+-    //shadow propagation flag
+-    //static bool shadowflag;
+   static unsigned count;
+   static const unsigned MAGIC_HASH_CONSTANT = 39;
+ 
+@@ -133,7 +128,8 @@
+     SExt,
+ 
+     // All subsequent kinds are binary.
+-
++    // ShadowExpr,
++    Shadow,
+ 
+     // Arithmetic
+     Add,
+@@ -153,9 +149,6 @@
+     LShr,
+     AShr,
+ 
+-    //shadowexpr
+-    Shadow,
+-
+     // Compare
+     Eq,
+     Ne,  ///< Not used in canonical form
+@@ -180,14 +173,14 @@
+ 
+   unsigned refCount;
+   bool shadowflag;
+-  bool changeFlag;
+   bool PointerFlag;
+   bool originFlag;//true for control flow effected
++
+ protected:
+   unsigned hashValue;
+ 
+ public:
+-  Expr() : refCount(0),shadowflag(false),changeFlag(false),PointerFlag(false),originFlag(false) { Expr::count++; }
++  Expr() : refCount(0) { Expr::count++; }
+   virtual ~Expr() { Expr::count--; }
+ 
+   virtual Kind getKind() const = 0;
+@@ -196,7 +189,7 @@
+   virtual unsigned getNumKids() const = 0;
+   virtual ref<Expr> getKid(unsigned i) const = 0;
+ 
+-  virtual void print(std::ostream &os) const;
++  virtual void print(llvm::raw_ostream &os) const;
+ 
+   /// dump - Print the expression to stderr.
+   void dump() const;
+@@ -212,8 +205,10 @@
+   typedef llvm::DenseSet<std::pair<const Expr *, const Expr *> > ExprEquivSet;
+   int compare(const Expr &b, ExprEquivSet &equivs) const;
+   int compare(const Expr &b) const {
+-    ExprEquivSet equivs;
+-    return compare(b, equivs);
++    static ExprEquivSet equivs;
++    int r = compare(b, equivs);
++    equivs.clear();
++    return r;
+   }
+   virtual int compareContents(const Expr &b) const { return 0; }
+ 
+@@ -221,6 +216,7 @@
+   // but using those children.
+   virtual ref<Expr> rebuild(ref<Expr> kids[/* getNumKids() */]) const = 0;
+ 
++  //
+ 
+   /// isZero - Is this a constant zero.
+   bool isZero() const;
+@@ -233,8 +229,8 @@
+ 
+   /* Static utility methods */
+ 
+-  static void printKind(std::ostream &os, Kind k);
+-  static void printWidth(std::ostream &os, Expr::Width w);
++  static void printKind(llvm::raw_ostream &os, Kind k);
++  static void printWidth(llvm::raw_ostream &os, Expr::Width w);
+ 
+   /// returns the smallest number of bytes in which the given width fits
+   static inline unsigned getMinBytesForWidth(Width w) {
+@@ -263,44 +259,21 @@
+ 
+   static bool classof(const Expr *) { return true; }
+ 
+-  //shadow propagation flag set and query
+-  void setChanging() { changeFlag=true; }
+-  void leaveChange() { changeFlag=false; }
+-  bool isChanging()  { return changeFlag; }
+-  void setshadowflag() { Expr::shadowflag=true; }
++  // shadow flag
++  void setshadowflag()    { Expr::shadowflag=true; }
+   void removeshadowflag() { Expr::shadowflag=false; }
+-  //static bool isContainShadow() { return Expr::shadowflag; }
+-  bool isContainShadow() { return Expr::shadowflag; }
+-  //pointer property propagation flag set and query
+-  void setIsPointer()  {
+-#if DEBUG_PP
+-      std::cerr<<"setIsPointer\n";
+-#endif
+-      Expr::PointerFlag=true;
+-  }
+-  void setIsNotPointer() {
+-#if DEBUG_PP
+-      std::cerr<<"setIsNotPointer\n";
+-#endif
+-      Expr::PointerFlag=false;
+-  }
+-  bool isPointer(){
+-      return PointerFlag;
+-  }
+-  void setOriginFlag(){
+-      Expr::originFlag=true;
+-#if DEBUG_ORIFLAG
+-      std::cerr<<"set origin flag as true\n";
+-#endif
+-  }
+-  void removeOriginFlag(){
+-      Expr::originFlag=false;
+-  }
+-  bool isCtrlAffected(){
+-      return originFlag;
+-  }
+-//Extent shadow expression in Expr that isContainShadow()
+-    ref<Expr> findShadowExpr(unsigned int numKid);
++  bool isContainShadow()  { return Expr::shadowflag; }
++  ref<Expr> findShadowExpr(unsigned int numKid);
++
++  // pointer flag
++  bool isPointer()        { return PointerFlag; }
++  void setIsPointer()     { Expr::PointerFlag=true; }
++  void setIsNotPointer()  { Expr::PointerFlag=false; }
++  void setOriginFlag()    { Expr::originFlag=true; }
++  void removeOriginFlag() { Expr::originFlag=false; }
++
++  // ctrl affected flag
++  bool isCtrlAffected()   { return originFlag; }
+ };
+ 
+ struct Expr::CreateArg {
+@@ -342,15 +315,34 @@
+ 
+ // Printing operators
+ 
+-inline std::ostream &operator<<(std::ostream &os, const Expr &e) {
++inline llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const Expr &e) {
+   e.print(os);
+   return os;
+ }
+ 
+-inline std::ostream &operator<<(std::ostream &os, const Expr::Kind kind) {
++// XXX the following macro is to work around the ExprTest unit test compile error
++#ifndef LLVM_29_UNITTEST
++inline llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const Expr::Kind kind) {
+   Expr::printKind(os, kind);
+   return os;
+ }
++#endif
++
++inline std::stringstream &operator<<(std::stringstream &os, const Expr &e) {
++  std::string str;
++  llvm::raw_string_ostream TmpStr(str);
++  e.print(TmpStr);
++  os << TmpStr.str();
++  return os;
++}
++
++inline std::stringstream &operator<<(std::stringstream &os, const Expr::Kind kind) {
++  std::string str;
++  llvm::raw_string_ostream TmpStr(str);
++  Expr::printKind(TmpStr, kind);
++  os << TmpStr.str();
++  return os;
++}
+ 
+ // Terminal Exprs
+ 
+@@ -417,7 +409,7 @@
+ 
+   virtual ref<Expr> rebuild(ref<Expr> kids[]) const {
+     assert(0 && "rebuild() on ConstantExpr");
+-    return (Expr*) this;
++    return const_cast<ConstantExpr*>(this);
+   }
+ 
+   virtual unsigned computeHash();
+@@ -555,6 +547,7 @@
+     ShadowExpr(const ref<Expr> &l, const ref<Expr> &r): BinaryExpr(l,r) {}
+ public:
+     static ref<Expr> alloc(const ref<Expr> &l,const ref<Expr> &r){
++        /*
+         if(l->isChanging() && r->isChanging()){
+             ref<Expr> res(new ShadowExpr(l,r));
+             res->setshadowflag();
+@@ -565,6 +558,7 @@
+             res->computeHash();
+             return res;
+         }
++        */
+         if(l.isNull())
+             return r;
+         else if(r.isNull())
+@@ -580,16 +574,8 @@
+             if(l->isCtrlAffected()||r->isCtrlAffected())
+                 res->setOriginFlag();
+             res->computeHash();
+-#if DEBUG_PP
+-            std::cerr<<"alloc new ref<Expr>:\n"<<res<<std::endl;
+-            if(res->isPointer())
+-              std::cerr<<"is pointer\n";
+-            else
+-              std::cerr<<"is not pointer\n";
+-#endif
+             return res;
+         }
+-
+     }
+     static ref<Expr> create(const ref<Expr> &l,const ref<Expr> &r);
+     Width getWidth() const {return left->getWidth();}
+@@ -605,8 +591,6 @@
+     }
+ };
+ 
+-
+-
+ class CmpExpr : public BinaryExpr {
+ 
+ protected:
+@@ -632,22 +616,12 @@
+ 
+   static ref<Expr> alloc(const ref<Expr> &src) {
+     ref<Expr> r(new NotOptimizedExpr(src));
+-        /*Shadow Propagation*/
+-      if(src->isContainShadow())
+-          r->setshadowflag();
+-      if(src->isCtrlAffected())
+-          r->setOriginFlag();
++    /*Shadow Propagation*/
++    if(src->isContainShadow())
++      r->setshadowflag();
++    if(src->isCtrlAffected())
++      r->setOriginFlag();
+     r->computeHash();
+-#if DEBUG_PP
+-            std::cerr<<"alloc new ref<Expr>:\n"<<r<<std::endl;
+-            if(r->isPointer())
+-              std::cerr<<"is pointer\n";
+-            else
+-              std::cerr<<"is not pointer\n";
+-#endif
+-#if DEBUG_ORIFLAG
+-            std::cerr<<"origin flag : "<<r->isCtrlAffected()<<std::endl;
+-#endif
+     return r;
+   }
+ 
+@@ -707,16 +681,43 @@
+ 
+ class Array {
+ public:
++  // Name of the array
+   const std::string name;
++
+   // FIXME: Not 64-bit clean.
+-  unsigned size;
++  const unsigned size;
++
++  /// Domain is how many bits can be used to access the array [32 bits]
++  /// Range is the size (in bits) of the number stored there (array of bytes -> 8)
++  const Expr::Width domain, range;
+ 
+   /// constantValues - The constant initial values for this array, or empty for
+   /// a symbolic array. If non-empty, this size of this array is equivalent to
+   /// the array size.
+-  const std::vector< ref<ConstantExpr> > constantValues;
++  const std::vector<ref<ConstantExpr> > constantValues;
++
++private:
++  unsigned hashValue;
++
++
++  /// The symbolic array singleton map is necessary to allow sharing
++  /// of Arrays across states, essentially performing a (limited) form
++  /// of alpha renaming.  Some Solvers use maps such as < const *Array,
++  /// std::vector<unsigned> >.  This causes problems because stored
++  /// answers can't be easily recovered.  Even worse, in read
++  /// expressions, such as (read array 32), array is a pointer, and
++  /// cached solutions are missed because the two Array instances
++  /// aren't recognized as the same.
++  static std::map < unsigned, std::vector < const Array * > * > symbolicArraySingletonMap;
++
++  // This shouldn't be allowed since it is a singleton class
++  Array(const Array& array);
++
++  // This shouldn't be allowed since it is a singleton class
++  Array& operator =(const Array& array);
++
++  ~Array();
+ 
+-public:
+   /// Array - Construct a new array object.
+   ///
+   /// \param _name - The name for this array. Names should generally be unique
+@@ -725,35 +726,49 @@
+   /// not parse correctly since two arrays with the same name cannot be
+   /// distinguished once printed.
+   Array(const std::string &_name, uint64_t _size,
+-        const ref<ConstantExpr> *constantValuesBegin = 0,
+-        const ref<ConstantExpr> *constantValuesEnd = 0)
+-    : name(_name), size(_size),
++	const ref<ConstantExpr> *constantValuesBegin = 0,
++	const ref<ConstantExpr> *constantValuesEnd = 0,
++	Expr::Width _domain = Expr::Int32, Expr::Width _range = Expr::Int8)
++    : name(_name), size(_size), domain(_domain), range(_range),
+       constantValues(constantValuesBegin, constantValuesEnd) {
++
+     assert((isSymbolicArray() || constantValues.size() == size) &&
+            "Invalid size for constant array!");
+     computeHash();
+ #ifndef NDEBUG
+     for (const ref<ConstantExpr> *it = constantValuesBegin;
+          it != constantValuesEnd; ++it)
+-    {
+-        assert((*it)->getWidth() == getRange() &&
++      assert((*it)->getWidth() == getRange() &&
+              "Invalid initial constant value!");
+-    }
+-#endif
++#endif //NDEBUG
+   }
+-  ~Array();
+ 
++public:
+   bool isSymbolicArray() const { return constantValues.empty(); }
+   bool isConstantArray() const { return !isSymbolicArray(); }
+ 
+-  Expr::Width getDomain() const { return Expr::Int32; }
+-  Expr::Width getRange() const { return Expr::Int8; }
++  const std::string getName() const { return name; }
++  unsigned getSize() const { return size; }
++  Expr::Width getDomain() const { return domain; }
++  Expr::Width getRange() const { return range; }
+ 
++  /// ComputeHash must take into account the name, the size, the domain, and the range
+   unsigned computeHash();
+   unsigned hash() const { return hashValue; }
+ 
+-private:
+-  unsigned hashValue;
++  /*
++   * Fairly simple idea.  Symbolic arrays have constant values of size
++   * 0, while concrete arrays have constant values of size > 0.
++   * Therefore, on each call, an array is created and, if it is
++   * concrete, it is simply returned.  If instead it is symbolic, then
++   * a map is checked to see if it was created before, so there is
++   * only a single instance floating out there.
++   */
++  static const Array * CreateArray(const std::string &_name, uint64_t _size,
++				   const ref<ConstantExpr> *constantValuesBegin = 0,
++				   const ref<ConstantExpr> *constantValuesEnd = 0,
++				   Expr::Width _domain = Expr::Int32,
++				   Expr::Width _range = Expr::Int8);
+ };
+ 
+ /// Class representing a complete list of updates into an array.
+@@ -795,43 +810,33 @@
+ public:
+   static ref<Expr> alloc(const UpdateList &updates, const ref<Expr> &index) {
+     ref<Expr> r(new ReadExpr(updates, index));
+-        /*Shadow Propagation*/
+-      if(index->isContainShadow())
+-          r->setshadowflag();
+-      if(index->isCtrlAffected())
+-          r->setOriginFlag();
+-      const UpdateNode *list_head=updates.head;
+-      for(unsigned int i=0;i<updates.getSize();i++){
+-          if(list_head){
+-              if(list_head->index->isContainShadow()){
+-                  r->setshadowflag();
+-              } else if(list_head->value->isContainShadow()){
+-                  if(list_head->value->isPointer())
+-                    r->setIsPointer();
+-                  r->setshadowflag();
+-              }
+-              if(list_head->index->isCtrlAffected()||list_head->value->isCtrlAffected())
+-                r->setOriginFlag();
+-          }
+-#if DEBUG_PP
+-            std::cerr<<"alloc new ref<Expr>:\n"<<r<<std::endl;
+-            if(r->isPointer())
+-              std::cerr<<"is pointer\n";
+-            else
+-              std::cerr<<"is not pointer\n";
+-#endif
+-          list_head=list_head->next;
+-      }
++    /*Shadow Propagation*/
++    if(index->isContainShadow())
++        r->setshadowflag();
++    if(index->isCtrlAffected())
++        r->setOriginFlag();
++    const UpdateNode *list_head=updates.head;
++    for(unsigned int i=0;i<updates.getSize();i++){
++        if(list_head){
++            if(list_head->index->isContainShadow()){
++                r->setshadowflag();
++            } else if(list_head->value->isContainShadow()){
++                if(list_head->value->isPointer())
++                  r->setIsPointer();
++                r->setshadowflag();
++            }
++            if(list_head->index->isCtrlAffected()||list_head->value->isCtrlAffected())
++              r->setOriginFlag();
++        }
++        list_head=list_head->next;
++    }
+     r->computeHash();
+-#if DEBUG_ORIFLAG
+-    std::cerr<<"origin flag : "<<r->isCtrlAffected()<<std::endl;
+-#endif
+     return r;
+   }
+ 
+   static ref<Expr> create(const UpdateList &updates, ref<Expr> i);
+ 
+-  Width getWidth() const { return Expr::Int8; }
++  Width getWidth() const { assert(updates.root); return updates.root->getRange(); }
+   Kind getKind() const { return Read; }
+ 
+   unsigned getNumKids() const { return numKids; }
+@@ -847,7 +852,7 @@
+ 
+ private:
+   ReadExpr(const UpdateList &_updates, const ref<Expr> &_index) :
+-    updates(_updates), index(_index) {}
++    updates(_updates), index(_index) { assert(updates.root); }
+ 
+ public:
+   static bool classof(const Expr *E) {
+@@ -870,24 +875,14 @@
+   static ref<Expr> alloc(const ref<Expr> &c, const ref<Expr> &t,
+                          const ref<Expr> &f) {
+     ref<Expr> r(new SelectExpr(c, t, f));
+-        /*Shadow Propagation*/
+-      if(c->isContainShadow() || t->isContainShadow() || f->isContainShadow())
+-          r->setshadowflag();
+-      if(t->isPointer() || f->isPointer())
+-        r->setIsPointer();
+-      if(c->isCtrlAffected()||t->isCtrlAffected()||f->isCtrlAffected())
+-          r->setOriginFlag();
++    /*Shadow Propagation*/
++    if(c->isContainShadow() || t->isContainShadow() || f->isContainShadow())
++        r->setshadowflag();
++    if(t->isPointer() || f->isPointer())
++      r->setIsPointer();
++    if(c->isCtrlAffected()||t->isCtrlAffected()||f->isCtrlAffected())
++        r->setOriginFlag();
+     r->computeHash();
+-#if DEBUG_PP
+-            std::cerr<<"alloc new ref<Expr>:\n"<<r<<std::endl;
+-            if(r->isPointer())
+-              std::cerr<<"is pointer\n";
+-            else
+-              std::cerr<<"is not pointer\n";
+-#endif
+-#if DEBUG_ORIFLAG
+-            std::cerr<<"origin flag : "<<r->isCtrlAffected()<<std::endl;
+-#endif
+     return r;
+   }
+ 
+@@ -944,24 +939,14 @@
+ public:
+   static ref<Expr> alloc(const ref<Expr> &l, const ref<Expr> &r) {
+     ref<Expr> c(new ConcatExpr(l, r));
+-        /*Shadow Propagation*/
+-      if(l->isContainShadow() || r->isContainShadow())
+-          c->setshadowflag();
+-      if(l->isPointer() || r->isPointer())
+-        c->setIsPointer();
+-      if(l->isCtrlAffected()||r->isCtrlAffected())
+-          c->setOriginFlag();
++    /*Shadow Propagation*/
++    if(l->isContainShadow() || r->isContainShadow())
++        c->setshadowflag();
++    if(l->isPointer() || r->isPointer())
++      c->setIsPointer();
++    if(l->isCtrlAffected()||r->isCtrlAffected())
++        c->setOriginFlag();
+     c->computeHash();
+-#if DEBUG_PP
+-            std::cerr<<"alloc new ref<Expr>:\n"<<c<<std::endl;
+-            if(c->isPointer())
+-              std::cerr<<"is pointer\n";
+-            else
+-              std::cerr<<"is not pointer\n";
+-#endif
+-#if DEBUG_ORIFLAG
+-            std::cerr<<"origin flag : "<<c->isCtrlAffected()<<std::endl;
+-#endif
+     return c;
+   }
+ 
+@@ -1020,28 +1005,14 @@
+ public:
+   static ref<Expr> alloc(const ref<Expr> &e, unsigned o, Width w) {
+     ref<Expr> r(new ExtractExpr(e, o, w));
+-        /*Shadow Propagation*/
+-      if(e->isContainShadow())
+-          r->setshadowflag();
+-	  if(e->isPointer())
+-		  r->setIsPointer();
+-      if(e->isCtrlAffected())
+-          r->setOriginFlag();
++    /*Shadow Propagation*/
++    if(e->isContainShadow())
++        r->setshadowflag();
++	if(e->isPointer())
++	    r->setIsPointer();
++    if(e->isCtrlAffected())
++        r->setOriginFlag();
+     r->computeHash();
+-#if DEBUG_PP
+-            std::cerr<<"alloc new ref<Expr>:\n"<<r<<std::endl;
+-	        if(e->isPointer())
+-              std::cerr<<"Input \n"<<e<<"\nis pointer\n";
+-            else
+-              std::cerr<<"Input \n"<<e<<"\nis not pointer\n";
+-            if(r->isPointer())
+-              std::cerr<<"is pointer\n";
+-            else
+-              std::cerr<<"is not pointer\n";
+-#endif
+-#if DEBUG_ORIFLAG
+-            std::cerr<<"origin flag : "<<r->isCtrlAffected()<<std::endl;
+-#endif
+     return r;
+   }
+ 
+@@ -1092,15 +1063,12 @@
+ public:
+   static ref<Expr> alloc(const ref<Expr> &e) {
+     ref<Expr> r(new NotExpr(e));
+-        /*Shadow Propagation*/
+-      if(e->isContainShadow())
+-          r->setshadowflag();
+-      if(e->isCtrlAffected())
+-          r->setOriginFlag();
++    /*Shadow Propagation*/
++    if(e->isContainShadow())
++        r->setshadowflag();
++    if(e->isCtrlAffected())
++        r->setOriginFlag();
+     r->computeHash();
+-#if DEBUG_ORIFLAG
+-    std::cerr<<"origin flag : "<<r->isCtrlAffected()<<std::endl;
+-#endif
+     return r;
+   }
+ 
+@@ -1177,7 +1145,7 @@
+     _class_kind ## Expr(ref<Expr> e, Width w) : CastExpr(e,w) {} \
+     static ref<Expr> alloc(const ref<Expr> &e, Width w) {        \
+       ref<Expr> r(new _class_kind ## Expr(e, w));                \
+-        /*Shadow Propagation*/                                   \
++      /*Shadow Propagation*/                                     \
+       if(e->isContainShadow()) r->setshadowflag();               \
+ 	  if(e->isPointer()) e->setIsPointer();						 \
+       if(e->isCtrlAffected())                                    \
+@@ -1214,12 +1182,12 @@
+                         const ref<Expr> &r) : BinaryExpr(l,r) {}     \
+     static ref<Expr> alloc(const ref<Expr> &l, const ref<Expr> &r) { \
+       ref<Expr> res(new _class_kind ## Expr (l, r));                 \
+-        /*Shadow Propagation*/                                       \
++      /*Shadow Propagation*/                                         \
+       if(l->isContainShadow() || r->isContainShadow())               \
+             res->setshadowflag();                                    \
+       if(l->isPointer() ^ r->isPointer())                            \
+             res->setIsPointer();                                     \
+-        if(l->isCtrlAffected()||r->isCtrlAffected())                 \
++      if(l->isCtrlAffected()||r->isCtrlAffected())                   \
+             res->setOriginFlag();                                    \
+       res->computeHash();                                            \
+       return res;                                                    \
+@@ -1265,13 +1233,13 @@
+                         const ref<Expr> &r) : CmpExpr(l,r) {}        \
+     static ref<Expr> alloc(const ref<Expr> &l, const ref<Expr> &r) { \
+       ref<Expr> res(new _class_kind ## Expr (l, r));                 \
+-        /*Shadow Propagation*/                                       \
++      /*Shadow Propagation*/                                         \
+       if(l->isContainShadow() || r->isContainShadow())               \
+             res->setshadowflag();                                    \
+       res->setIsNotPointer();                                        \
+-      res->computeHash();                                            \
+       if(l->isCtrlAffected()||r->isCtrlAffected())                   \
+             res->setOriginFlag();                                    \
++      res->computeHash();                                            \
+       return res;                                                    \
+     }                                                                \
+     static ref<Expr> create(const ref<Expr> &l, const ref<Expr> &r); \
+只在 ../../zesti/include/klee 存在：HIPList.h
+diff -ur ../../zesti/include/klee/IncompleteSolver.h klee/IncompleteSolver.h
+--- ../../zesti/include/klee/IncompleteSolver.h	2017-09-18 15:21:39.679718000 +0800
++++ klee/IncompleteSolver.h	2017-09-14 19:58:17.000000000 +0800
+@@ -102,6 +102,8 @@
+                             std::vector< std::vector<unsigned char> > &values,
+                             bool &hasSolution);
+   SolverRunStatus getOperationStatusCode();
++  char *getConstraintLog(const Query&);
++  void setCoreSolverTimeout(double timeout);
+ };
+ 
+ }
+diff -ur ../../zesti/include/klee/Internal/ADT/MapOfSets.h klee/Internal/ADT/MapOfSets.h
+--- ../../zesti/include/klee/Internal/ADT/MapOfSets.h	2017-09-18 15:21:39.681234300 +0800
++++ klee/Internal/ADT/MapOfSets.h	2017-09-14 19:58:17.000000000 +0800
+@@ -345,7 +345,6 @@
+         if (res) return res;
+       }
+     } else {
+-      typename Node::children_ty::iterator kbegin = n->children.begin();
+       typename Node::children_ty::iterator kmid = 
+         n->children.lower_bound(*begin);
+       for (typename Node::children_ty::iterator it = n->children.begin(),
+diff -ur ../../zesti/include/klee/Internal/ADT/TreeStream.h klee/Internal/ADT/TreeStream.h
+--- ../../zesti/include/klee/Internal/ADT/TreeStream.h	2017-09-18 15:21:39.681515800 +0800
++++ klee/Internal/ADT/TreeStream.h	2017-09-14 19:58:17.000000000 +0800
+@@ -11,7 +11,6 @@
+ #define __UTIL_TREESTREAM_H__
+ 
+ #include <string>
+-#include <iostream>
+ #include <vector>
+ 
+ namespace klee {
+diff -ur ../../zesti/include/klee/Internal/Module/KInstruction.h klee/Internal/Module/KInstruction.h
+--- ../../zesti/include/klee/Internal/Module/KInstruction.h	2017-09-18 15:21:39.682270000 +0800
++++ klee/Internal/Module/KInstruction.h	2017-09-14 19:58:57.000000000 +0800
+@@ -11,11 +11,7 @@
+ #define KLEE_KINSTRUCTION_H
+ 
+ #include "klee/Config/Version.h"
+-#if LLVM_VERSION_CODE < LLVM_VERSION(2, 9) && LLVM_VERSION_CODE >= LLVM_VERSION(2, 7)
+-#include "llvm/System/DataTypes.h"
+-#else
+ #include "llvm/Support/DataTypes.h"
+-#endif
+ #include <vector>
+ 
+ namespace llvm {
+@@ -54,7 +50,7 @@
+     std::vector< std::pair<unsigned, uint64_t> > indices;
+ 
+     /// offset - A constant offset to add to the pointer operand to execute the
+-    /// insturction.
++    /// instruction.
+     uint64_t offset;
+   };
+ }
+diff -ur ../../zesti/include/klee/Internal/Module/KModule.h klee/Internal/Module/KModule.h
+--- ../../zesti/include/klee/Internal/Module/KModule.h	2017-09-18 15:21:39.682420300 +0800
++++ klee/Internal/Module/KModule.h	2017-09-14 19:58:57.000000000 +0800
+@@ -90,18 +90,14 @@
+ #else
+     llvm::DataLayout *targetData;
+ #endif
+-
++    
+     // Some useful functions to know the address of
+-    llvm::Function *dbgStopPointFn, *kleeMergeFn;
++    llvm::Function *kleeMergeFn;
+ 
+     // Our shadow versions of LLVM structures.
+     std::vector<KFunction*> functions;
+     std::map<llvm::Function*, KFunction*> functionMap;
+ 
+-    std::set<llvm::Function*> srcUniqueFnSet,cmpUniqueFnSet;
+-    std::set<llvm::BasicBlock*> srcUniqueBBSet,cmpUniqueBBSet;
+-    std::map<llvm::Instruction*,llvm::Instruction*> modInstSet;
+-    std::set<llvm::Instruction*> srcUniqueInstSet,cmpUniqueInstSet;
+     // Functions which escape (may be called indirectly)
+     // XXX change to KFunction
+     std::set<llvm::Function*> escapingFunctions;
+@@ -114,6 +110,13 @@
+ 
+     Cell *constantTable;
+ 
++    // Functions which are part of KLEE runtime
++    std::set<const llvm::Function*> internalFunctions;
++
++  private:
++    // Mark function with functionName as part of the KLEE runtime
++    void addInternalFunction(const char* functionName);
++
+   public:
+     KModule(llvm::Module *_module);
+     ~KModule();
+@@ -121,16 +124,11 @@
+     /// Initialize local data structures.
+     //
+     // FIXME: ihandler should not be here
+-    void prepare(const Interpreter::ModuleOptions &opts,
++    void prepare(const Interpreter::ModuleOptions &opts, 
+                  InterpreterHandler *ihandler);
+ 
+     /// Return an id for the given constant, creating a new one if necessary.
+     unsigned getConstantID(llvm::Constant *c, KInstruction* ki);
+-
+-    void setSemanticDiff(unsigned diffKinds,llvm::Function *Fn);
+-    void setSemanticDiff(unsigned diffKinds,llvm::BasicBlock *BB);
+-    void setSemanticDiff(unsigned diffKinds,llvm::Instruction *I);
+-    void setSemanticDiff(llvm::Instruction *src,llvm::Instruction *cmp);
+   };
+ } // End klee namespace
+ 
+只在 klee/Internal/Support 存在：Debug.h
+diff -ur ../../zesti/include/klee/Internal/Support/FloatEvaluation.h klee/Internal/Support/FloatEvaluation.h
+--- ../../zesti/include/klee/Internal/Support/FloatEvaluation.h	2017-09-18 15:21:39.682818400 +0800
++++ klee/Internal/Support/FloatEvaluation.h	2017-09-14 19:58:17.000000000 +0800
+@@ -15,8 +15,11 @@
+ #include "klee/util/Bits.h"     //bits64::truncateToNBits
+ #include "IntEvaluation.h" //ints::sext
+ 
++#include "llvm/Support/ErrorHandling.h"
+ #include "llvm/Support/MathExtras.h"
+ 
++#include <cassert>
++
+ namespace klee {
+ namespace floats {
+ 
+@@ -81,7 +84,7 @@
+   switch( inWidth ) {
+   case FLT_BITS: return bits64::truncateToNBits(FloatAsUInt64(UInt64AsFloat(l)  + UInt64AsFloat(r)),  FLT_BITS);
+   case DBL_BITS: return bits64::truncateToNBits(DoubleAsUInt64(UInt64AsDouble(l) + UInt64AsDouble(r)), DBL_BITS);
+-  default: assert(0 && "invalid floating point width");
++  default: llvm::report_fatal_error("unsupported floating point width");
+   }
+ }
+ 
+@@ -90,7 +93,7 @@
+   switch( inWidth ) {
+   case FLT_BITS: return bits64::truncateToNBits(FloatAsUInt64(UInt64AsFloat(l)  - UInt64AsFloat(r)),  FLT_BITS);
+   case DBL_BITS: return bits64::truncateToNBits(DoubleAsUInt64(UInt64AsDouble(l) - UInt64AsDouble(r)), DBL_BITS);
+-  default: assert(0 && "invalid floating point width");
++  default: llvm::report_fatal_error("unsupported floating point width");
+   }
+ }
+ 
+@@ -99,7 +102,7 @@
+   switch( inWidth ) {
+   case FLT_BITS: return bits64::truncateToNBits(FloatAsUInt64(UInt64AsFloat(l)  * UInt64AsFloat(r)),  FLT_BITS);
+   case DBL_BITS: return bits64::truncateToNBits(DoubleAsUInt64(UInt64AsDouble(l) * UInt64AsDouble(r)), DBL_BITS);
+-  default: assert(0 && "invalid floating point width");
++  default: llvm::report_fatal_error("unsupported floating point width");
+   }
+ }
+ 
+@@ -108,7 +111,7 @@
+   switch( inWidth ) {
+   case FLT_BITS: return bits64::truncateToNBits(FloatAsUInt64(UInt64AsFloat(l)  / UInt64AsFloat(r)),  FLT_BITS);
+   case DBL_BITS: return bits64::truncateToNBits(DoubleAsUInt64(UInt64AsDouble(l) / UInt64AsDouble(r)), DBL_BITS);
+-  default: assert(0 && "invalid floating point width");
++  default: llvm::report_fatal_error("unsupported floating point width");
+   }
+ }
+ 
+@@ -117,7 +120,7 @@
+   switch( inWidth ) {
+   case FLT_BITS: return bits64::truncateToNBits(FloatAsUInt64( fmod(UInt64AsFloat(l),  UInt64AsFloat(r)) ), FLT_BITS);
+   case DBL_BITS: return bits64::truncateToNBits(DoubleAsUInt64( fmod(UInt64AsDouble(l), UInt64AsDouble(r)) ), DBL_BITS);
+-  default: assert(0 && "invalid floating point width");
++  default: llvm::report_fatal_error("unsupported floating point width");
+   }
+ }
+ 
+@@ -131,7 +134,7 @@
+   switch( inWidth ) {
+   case FLT_BITS: return llvm::IsNAN( UInt64AsFloat(l) );
+   case DBL_BITS: return llvm::IsNAN( UInt64AsDouble(l) );
+-  default: assert(0 && "invalid floating point width");
++  default: llvm::report_fatal_error("unsupported floating point width");
+   }
+ }
+ 
+@@ -139,7 +142,7 @@
+   switch( inWidth ) {
+   case FLT_BITS: return UInt64AsFloat(l)  == UInt64AsFloat(r);
+   case DBL_BITS: return UInt64AsDouble(l) == UInt64AsDouble(r);
+-  default: assert(0 && "invalid floating point width");
++  default: llvm::report_fatal_error("unsupported floating point width");
+   }
+ }
+ 
+@@ -147,7 +150,7 @@
+   switch( inWidth ) {
+   case FLT_BITS: return UInt64AsFloat(l)  != UInt64AsFloat(r);
+   case DBL_BITS: return UInt64AsDouble(l) != UInt64AsDouble(r);
+-  default: assert(0 && "invalid floating point width");
++  default: llvm::report_fatal_error("unsupported floating point width");
+   }
+ }
+ 
+@@ -155,7 +158,7 @@
+   switch( inWidth ) {
+   case FLT_BITS: return UInt64AsFloat(l)  < UInt64AsFloat(r);
+   case DBL_BITS: return UInt64AsDouble(l) < UInt64AsDouble(r);
+-  default: assert(0 && "invalid floating point width");
++  default: llvm::report_fatal_error("unsupported floating point width");
+   }
+ }
+ 
+@@ -163,7 +166,7 @@
+   switch( inWidth ) {
+   case FLT_BITS: return UInt64AsFloat(l)  <= UInt64AsFloat(r);
+   case DBL_BITS: return UInt64AsDouble(l) <= UInt64AsDouble(r);
+-  default: assert(0 && "invalid floating point width");
++  default: llvm::report_fatal_error("unsupported floating point width");
+   }
+ }
+ 
+@@ -171,7 +174,7 @@
+   switch( inWidth ) {
+   case FLT_BITS: return UInt64AsFloat(l)  > UInt64AsFloat(r);
+   case DBL_BITS: return UInt64AsDouble(l) > UInt64AsDouble(r);
+-  default: assert(0 && "invalid floating point width");
++  default: llvm::report_fatal_error("unsupported floating point width");
+   }
+ }
+ 
+@@ -179,7 +182,7 @@
+   switch( inWidth ) {
+   case FLT_BITS: return UInt64AsFloat(l)  >= UInt64AsFloat(r);
+   case DBL_BITS: return UInt64AsDouble(l) >= UInt64AsDouble(r);
+-  default: assert(0 && "invalid floating point width");
++  default: llvm::report_fatal_error("unsupported floating point width");
+   }
+ }
+ 
+@@ -221,7 +224,7 @@
+   switch( inWidth ) {
+   case FLT_BITS: return bits64::truncateToNBits((uint64_t)UInt64AsFloat(l),  outWidth );
+   case DBL_BITS: return bits64::truncateToNBits((uint64_t)UInt64AsDouble(l), outWidth );
+-  default: assert(0 && "invalid floating point width");
++  default: llvm::report_fatal_error("unsupported floating point width");
+   }
+ }
+ 
+@@ -230,7 +233,7 @@
+   switch( inWidth ) {
+   case FLT_BITS: return bits64::truncateToNBits((int64_t)UInt64AsFloat(l),  outWidth);
+   case DBL_BITS: return bits64::truncateToNBits((int64_t)UInt64AsDouble(l), outWidth);
+-  default: assert(0 && "invalid floating point width");
++  default: llvm::report_fatal_error("unsupported floating point width");
+   }
+ }
+ 
+@@ -239,7 +242,7 @@
+   switch( outWidth ) {
+   case FLT_BITS: return bits64::truncateToNBits(FloatAsUInt64((float)l),  outWidth);
+   case DBL_BITS: return bits64::truncateToNBits(DoubleAsUInt64((double)l), outWidth);
+-  default: assert(0 && "invalid floating point width");
++  default: llvm::report_fatal_error("unsupported floating point width");
+   }
+ }
+ 
+@@ -248,7 +251,7 @@
+   switch( outWidth ) {
+   case FLT_BITS: return bits64::truncateToNBits(FloatAsUInt64((float)(int64_t)ints::sext(l, 64, inWidth)), outWidth);
+   case DBL_BITS: return bits64::truncateToNBits(DoubleAsUInt64((double)(int64_t)ints::sext(l,64, inWidth)), outWidth);
+-  default: assert(0 && "invalid floating point width");
++  default: llvm::report_fatal_error("unsupported floating point width");
+   }
+ }
+ 
+只在 klee/Internal/Support 存在：PrintVersion.h
+只在 klee/Internal/System 存在：MemoryUsage.h
+diff -ur ../../zesti/include/klee/Internal/System/Time.h klee/Internal/System/Time.h
+--- ../../zesti/include/klee/Internal/System/Time.h	2017-09-18 15:21:39.683690000 +0800
++++ klee/Internal/System/Time.h	2017-09-14 19:58:17.000000000 +0800
+@@ -10,10 +10,19 @@
+ #ifndef KLEE_UTIL_TIME_H
+ #define KLEE_UTIL_TIME_H
+ 
++#include <llvm/Support/TimeValue.h>
++
+ namespace klee {
+   namespace util {
++
++    /// Seconds spent by this process in user mode.
+     double getUserTime();
++
++    /// Wall time in seconds.
+     double getWallTime();
++
++    /// Wall time as TimeValue object.
++    llvm::sys::TimeValue getWallTimeVal();
+   }
+ }
+ 
+diff -ur ../../zesti/include/klee/Interpreter.h klee/Interpreter.h
+--- ../../zesti/include/klee/Interpreter.h	2017-09-18 15:21:39.683840400 +0800
++++ klee/Interpreter.h	2017-09-14 19:58:57.000000000 +0800
+@@ -19,9 +19,8 @@
+ namespace llvm {
+ class Function;
+ class Module;
+-class Value;
+-class BasicBlock;
+-class Instruction;
++class raw_ostream;
++class raw_fd_ostream;
+ }
+ 
+ namespace klee {
+@@ -34,20 +33,16 @@
+   InterpreterHandler() {}
+   virtual ~InterpreterHandler() {}
+ 
+-  virtual std::ostream &getInfoStream() const = 0;
++  virtual llvm::raw_ostream &getInfoStream() const = 0;
+ 
+   virtual std::string getOutputFilename(const std::string &filename) = 0;
+-  virtual std::ostream *openOutputFile(const std::string &filename) = 0;
++  virtual llvm::raw_fd_ostream *openOutputFile(const std::string &filename) = 0;
+ 
+   virtual void incPathsExplored() = 0;
+ 
+-virtual void processTestCase(const ExecutionState &state,
+-                             const char *err,
+-                             const char *suffix) = 0;
+-//virtual void processTestCase(const ExecutionState &state,
+-//                             const char *err,
+-//                             const char *suffix,
+-//                             const std::string *funcName=NULL) = 0;
++  virtual void processTestCase(const ExecutionState &state,
++                               const char *err, 
++                               const char *suffix) = 0;
+ };
+ 
+ class Interpreter {
+@@ -58,13 +53,13 @@
+     std::string LibraryDir;
+     bool Optimize;
+     bool CheckDivZero;
+-    bool CheckAsserts;
++    bool CheckOvershift;
+ 
+-    ModuleOptions(const std::string& _LibraryDir,
++    ModuleOptions(const std::string& _LibraryDir, 
+                   bool _Optimize, bool _CheckDivZero,
+-                  bool _CheckAsserts)
+-      : LibraryDir(_LibraryDir), Optimize(_Optimize),
+-        CheckDivZero(_CheckDivZero), CheckAsserts(_CheckAsserts) {}
++                  bool _CheckOvershift)
++      : LibraryDir(_LibraryDir), Optimize(_Optimize), 
++        CheckDivZero(_CheckDivZero), CheckOvershift(_CheckOvershift) {}
+   };
+ 
+   enum LogType
+@@ -90,7 +85,7 @@
+ protected:
+   const InterpreterOptions interpreterOpts;
+ 
+- Interpreter(const InterpreterOptions &_interpreterOpts)
++  Interpreter(const InterpreterOptions &_interpreterOpts)
+     : interpreterOpts(_interpreterOpts)
+   {}
+ 
+@@ -100,36 +95,14 @@
+   static Interpreter *create(const InterpreterOptions &_interpreterOpts,
+                              InterpreterHandler *ih);
+ 
+-  /// Register the module to be executed.
++  /// Register the module to be executed.  
+   ///
+   /// \return The final module after it has been optimized, checks
+   /// inserted, and modified for interpretation.
+-  virtual const llvm::Module *
+-  setModule(llvm::Module *module,
++  virtual const llvm::Module * 
++  setModule(llvm::Module *module, 
+             const ModuleOptions &opts) = 0;
+ 
+-  virtual const llvm::Module *
+-  setCmpModule(llvm::Module *module,
+-            const ModuleOptions &opts) = 0;
+-
+-  virtual const llvm::Module *
+-  setSrcModule(llvm::Module *module,
+-            const ModuleOptions &opts) = 0;
+-
+-  virtual void setSrcUniqueFn(llvm::Function *Fn) = 0;
+-  virtual void setCmpUniqueFn(llvm::Function *Fn) = 0;
+-
+-  virtual void setSrcUniqueBB(llvm::BasicBlock *BB) = 0;
+-  virtual void setCmpUniqueBB(llvm::BasicBlock *BB) = 0;
+-
+-  virtual void setSrcUniqueInst(llvm::Instruction *I,unsigned editMode) = 0;
+-  virtual void setCmpUniqueInst(llvm::Instruction *I,unsigned editMode) = 0;
+-
+-  virtual void setModInst(llvm::Instruction *src, llvm::Instruction *cmp) = 0;
+-
+-  virtual void setValueMap(llvm::Value *V, llvm::Value *cmpV) = 0;
+-  virtual bool valueMatched(llvm::Value *V) = 0;
+-  virtual bool checkSameValue(llvm::Value *V, llvm::Value *cmpV) = 0;
+   // supply a tree stream writer which the interpreter will use
+   // to record the concrete path (as a stream of '0' and '1' bytes).
+   virtual void setPathWriter(TreeStreamWriter *tsw) = 0;
+@@ -151,7 +124,7 @@
+   // for the search. use null to reset.
+   virtual void useSeeds(const std::vector<struct KTest *> *seeds) = 0;
+ 
+-  virtual int runFunctionAsMain(llvm::Function *f,
++  virtual void runFunctionAsMain(llvm::Function *f,
+                                  int argc,
+                                  char **argv,
+                                  char **envp) = 0;
+@@ -167,13 +140,13 @@
+   virtual unsigned getPathStreamID(const ExecutionState &state) = 0;
+ 
+   virtual unsigned getSymbolicPathStreamID(const ExecutionState &state) = 0;
+-
++  
+   virtual void getConstraintLog(const ExecutionState &state,
+                                 std::string &res,
+                                 LogType logFormat = STP) = 0;
+ 
+-  virtual bool getSymbolicSolution(const ExecutionState &state,
+-                                   std::vector<
++  virtual bool getSymbolicSolution(const ExecutionState &state, 
++                                   std::vector< 
+                                    std::pair<std::string,
+                                    std::vector<unsigned char> > >
+                                    &res) = 0;
+diff -ur ../../zesti/include/klee/klee.h klee/klee.h
+--- ../../zesti/include/klee/klee.h	2017-09-18 15:21:39.684669800 +0800
++++ klee/klee.h	2017-09-17 19:01:31.000000000 +0800
+@@ -1,11 +1,11 @@
+-//===-- klee.h --------------------------------------------------*- C++ -*-===//
++/*===-- klee.h --------------------------------------------------*- C++ -*-===//
+ //
+ //                     The KLEE Symbolic Virtual Machine
+ //
+ // This file is distributed under the University of Illinois Open Source
+ // License. See LICENSE.TXT for details.
+ //
+-//===----------------------------------------------------------------------===//
++//===----------------------------------------------------------------------===*/
+ 
+ #ifndef __KLEE_H__
+ #define __KLEE_H__
+@@ -17,72 +17,75 @@
+ extern "C" {
+ #endif
+ 
+-    //buptshadow
+-    void klee_dump_divergence(intptr_t result);
+-
+   /* Add an accesible memory object at a user specified location. It
+-     is the users responsibility to make sure that these memory
+-     objects do not overlap. These memory objects will also
+-     (obviously) not correctly interact with external function
+-     calls. */
++   * is the users responsibility to make sure that these memory
++   * objects do not overlap. These memory objects will also
++   * (obviously) not correctly interact with external function
++   * calls.
++   */
+   void klee_define_fixed_object(void *addr, size_t nbytes);
+ 
+-  /// klee_make_symbolic - Make the contents of the object pointer to by \arg
+-  /// addr symbolic. 
+-  ///
+-  /// \arg addr - The start of the object.
+-  /// \arg nbytes - The number of bytes to make symbolic; currently this *must*
+-  /// be the entire contents of the object.
+-  /// \arg name - An optional name, used for identifying the object in messages,
+-  /// output files, etc.
++  /* klee_make_symbolic - Make the contents of the object pointer to by \arg
++   * addr symbolic.
++   *
++   * \arg addr - The start of the object.
++   * \arg nbytes - The number of bytes to make symbolic; currently this *must*
++   * be the entire contents of the object.
++   * \arg name - An optional name, used for identifying the object in messages,
++   * output files, etc.
++   */
+   void klee_make_symbolic(void *addr, size_t nbytes, const char *name);
+ 
+-  /// klee_range - Construct a symbolic value in the signed interval
+-  /// [begin,end).
+-  ///
+-  /// \arg name - An optional name, used for identifying the object in messages,
+-  /// output files, etc.
++  /* klee_range - Construct a symbolic value in the signed interval
++   * [begin,end).
++   *
++   * \arg name - An optional name, used for identifying the object in messages,
++   * output files, etc.
++   */
+   int klee_range(int begin, int end, const char *name);
+ 
+-  /// klee_int - Construct an unconstrained symbolic integer.
+-  ///
+-  /// \arg name - An optional name, used for identifying the object in messages,
+-  /// output files, etc.
++  /*  klee_int - Construct an unconstrained symbolic integer.
++   *
++   * \arg name - An optional name, used for identifying the object in messages,
++   * output files, etc.
++   */
+   int klee_int(const char *name);
+ 
+-  /// klee_silent_exit - Terminate the current KLEE process without generating a
+-  /// test file.
++  /* klee_silent_exit - Terminate the current KLEE process without generating a
++   * test file.
++   */
+   __attribute__((noreturn))
+   void klee_silent_exit(int status);
+ 
+-  /// klee_abort - Abort the current KLEE process.
++  /* klee_abort - Abort the current KLEE process. */
+   __attribute__((noreturn))
+-  void klee_abort(void);  
++  void klee_abort(void);
+ 
+-  /// klee_report_error - Report a user defined error and terminate the current
+-  /// KLEE process.
+-  ///
+-  /// \arg file - The filename to report in the error message.
+-  /// \arg line - The line number to report in the error message.
+-  /// \arg message - A string to include in the error message.
+-  /// \arg suffix - The suffix to use for error files.
++  /* klee_report_error - Report a user defined error and terminate the current
++   * KLEE process.
++   *
++   * \arg file - The filename to report in the error message.
++   * \arg line - The line number to report in the error message.
++   * \arg message - A string to include in the error message.
++   * \arg suffix - The suffix to use for error files.
++   */
+   __attribute__((noreturn))
+-  void klee_report_error(const char *file, 
+-			 int line, 
+-			 const char *message, 
++  void klee_report_error(const char *file,
++			 int line,
++			 const char *message,
+ 			 const char *suffix);
+-  
++
+   /* called by checking code to get size of memory. */
+   size_t klee_get_obj_size(void *ptr);
+-  
++
+   /* print the tree associated w/ a given expression. */
+   void klee_print_expr(const char *msg, ...);
+-  
++
+   /* NB: this *does not* fork n times and return [0,n) in children.
+    * It makes n be symbolic and returns: caller must compare N times.
+    */
+   uintptr_t klee_choose(uintptr_t n);
+-  
++
+   /* special klee assert macro. this assert should be used when path consistency
+    * across platforms is desired (e.g., in tests).
+    * NB: __assert_fail is a klee "special" function
+@@ -107,6 +110,7 @@
+   void klee_warning(const char *message);
+   void klee_warning_once(const char *message);
+   void klee_prefer_cex(void *object, uintptr_t condition);
++  void klee_posix_prefer_cex(void *object, uintptr_t condition);
+   void klee_mark_global(void *object);
+ 
+   /* Return a possible constant value for the input expression. This
+@@ -125,8 +129,8 @@
+   /* Ensure that memory in the range [address, address+size) is
+      accessible to the program. If some byte in the range is not
+      accessible an error will be generated and the state
+-     terminated. 
+-  
++     terminated.
++
+      The current implementation requires both address and size to be
+      constants and that the range lie within a single object. */
+   void klee_check_memory_access(const void *address, size_t size);
+@@ -145,14 +149,13 @@
+   /* Print stack trace. */
+   void klee_stack_trace(void);
+ 
+-  /* enable and disable symbex. default TTL is 100 */
+-  // void klee_enable_symbex(void);
+-  // void klee_enable_symbex(int TTL);
+-  void klee_disable_symbex(void);
++  /* Print range for given argument and tagged with name */
++  void klee_print_range(const char * name, int arg );
+ 
++  /* Merge current states together if possible */
++  void klee_merge();
+   /* get zest status */
+   int klee_zest_enabled(void);
+-
+ #ifdef __cplusplus
+ }
+ #endif
+diff -ur ../../zesti/include/klee/Solver.h klee/Solver.h
+--- ../../zesti/include/klee/Solver.h	2017-09-18 15:21:39.684010700 +0800
++++ klee/Solver.h	2017-09-14 19:58:57.000000000 +0800
+@@ -18,7 +18,6 @@
+   class ConstraintManager;
+   class Expr;
+   class SolverImpl;
+-  struct InstructionInfo;
+ 
+   struct Query {
+   public:
+@@ -68,36 +67,72 @@
+     Solver(SolverImpl *_impl) : impl(_impl) {}
+     virtual ~Solver();
+ 
+-    /// evaluate - Determine the full validity of an expression in particular
+-    /// state.
+-    ////
+-    /// \param [out] result - The validity of the given expression (provably
+-    /// true, provably false, or neither).
++    /// evaluate - Determine for a particular state if the query
++    /// expression is provably true, provably false or neither.
++    ///
++    /// \param [out] result - if
++    /// \f[ \forall X constraints(X) \to query(X) \f]
++    /// then Solver::True,
++    /// else if
++    /// \f[ \forall X constraints(X) \to \lnot query(X) \f]
++    /// then Solver::False,
++    /// else
++    /// Solver::Unknown
+     ///
+     /// \return True on success.
+     bool evaluate(const Query&, Validity &result);
+   
+     /// mustBeTrue - Determine if the expression is provably true.
++    /// 
++    /// This evaluates the following logical formula:
++    ///
++    /// \f[ \forall X constraints(X) \to query(X) \f]
++    ///
++    /// which is equivalent to
++    ///
++    /// \f[ \lnot \exists X constraints(X) \land \lnot query(X) \f]
++    ///
++    /// Where \f$X\f$ is some assignment, \f$constraints(X)\f$ are the constraints
++    /// in the query and \f$query(X)\f$ is the query expression.
+     ///
+-    /// \param [out] result - On success, true iff the expresssion is provably
+-    /// false.
++    /// \param [out] result - On success, true iff the logical formula is true
+     ///
+     /// \return True on success.
+     bool mustBeTrue(const Query&, bool &result);
+ 
+     /// mustBeFalse - Determine if the expression is provably false.
+     ///
+-    /// \param [out] result - On success, true iff the expresssion is provably
+-    /// false.
++    /// This evaluates the following logical formula:
++    ///
++    /// \f[ \lnot \exists X constraints(X) \land query(X) \f]
++    ///
++    /// which is equivalent to
++    ///
++    ///  \f[ \forall X constraints(X) \to \lnot query(X) \f]
++    ///
++    /// Where \f$X\f$ is some assignment, \f$constraints(X)\f$ are the constraints
++    /// in the query and \f$query(X)\f$ is the query expression.
++    ///
++    /// \param [out] result - On success, true iff the logical formula is false
+     ///
+     /// \return True on success.
+     bool mustBeFalse(const Query&, bool &result);
+ 
+     /// mayBeTrue - Determine if there is a valid assignment for the given state
+-    /// in which the expression evaluates to false.
++    /// in which the expression evaluates to true.
+     ///
+-    /// \param [out] result - On success, true iff the expresssion is true for
+-    /// some satisfying assignment.
++    /// This evaluates the following logical formula:
++    ///
++    /// \f[ \exists X constraints(X) \land query(X) \f]
++    ///
++    /// which is equivalent to
++    ///
++    /// \f[ \lnot \forall X constraints(X) \to \lnot query(X) \f]
++    ///
++    /// Where \f$X\f$ is some assignment, \f$constraints(X)\f$ are the constraints
++    /// in the query and \f$query(X)\f$ is the query expression.
++    ///
++    /// \param [out] result - On success, true iff the logical formula may be true
+     ///
+     /// \return True on success.
+     bool mayBeTrue(const Query&, bool &result);
+@@ -105,8 +140,18 @@
+     /// mayBeFalse - Determine if there is a valid assignment for the given
+     /// state in which the expression evaluates to false.
+     ///
+-    /// \param [out] result - On success, true iff the expresssion is false for
+-    /// some satisfying assignment.
++    /// This evaluates the following logical formula:
++    ///
++    /// \f[ \exists X constraints(X) \land \lnot query(X) \f]
++    ///
++    /// which is equivalent to
++    ///
++    /// \f[ \lnot \forall X constraints(X) \to query(X) \f]
++    ///
++    /// Where \f$X\f$ is some assignment, \f$constraints(X)\f$ are the constraints
++    /// in the query and \f$query(X)\f$ is the query expression.
++    ///
++    /// \param [out] result - On success, true iff the logical formula may be false
+     ///
+     /// \return True on success.
+     bool mayBeFalse(const Query&, bool &result);
+@@ -114,7 +159,7 @@
+     /// getValue - Compute one possible value for the given expression.
+     ///
+     /// \param [out] result - On success, a value for the expression in some
+-    /// satisying assignment.
++    /// satisfying assignment.
+     ///
+     /// \return True on success.
+     bool getValue(const Query&, ref<ConstantExpr> &result);
+@@ -124,7 +169,7 @@
+     /// \param [out] result - On success, this vector will be filled in with an
+     /// array of bytes for each given object (with length matching the object
+     /// size). The bytes correspond to the initial values for the objects for
+-    /// some satisying assignment.
++    /// some satisfying assignment.
+     ///
+     /// \return True on success.
+     ///
+@@ -149,6 +194,9 @@
+     //
+     // FIXME: This should go into a helper class, and should handle failure.
+     virtual std::pair< ref<Expr>, ref<Expr> > getRange(const Query&);
++    
++    virtual char *getConstraintLog(const Query& query);
++    virtual void setCoreSolverTimeout(double timeout);
+   };
+ 
+   /// STPSolver - A complete solver based on STP.
+@@ -162,21 +210,30 @@
+     /// be optimized into add/shift/multiply operations.
+     STPSolver(bool useForkedSTP, bool optimizeDivides = true);
+ 
+-    
+-    
+     /// getConstraintLog - Return the constraint log for the given state in CVC
+     /// format.
+-    char *getConstraintLog(const Query&);
+-    
+-    /// setTimeout - Set constraint solver timeout delay to the given value; 0
++    virtual char *getConstraintLog(const Query&);
++
++    /// setCoreSolverTimeout - Set constraint solver timeout delay to the given value; 0
+     /// is off.
+-    void setTimeout(double timeout);
++    virtual void setCoreSolverTimeout(double timeout);
+   };
+ 
+-  class InstructionInfoProvider {
++  
++#ifdef SUPPORT_METASMT
++  
++  template<typename SolverContext>
++  class MetaSMTSolver : public Solver {
+   public:
+-    virtual const InstructionInfo* GetCurrentInstruction() const = 0;
+-  };
++    MetaSMTSolver(bool useForked, bool optimizeDivides);
++    virtual ~MetaSMTSolver();
++  
++    virtual char *getConstraintLog(const Query&);
++    virtual void setCoreSolverTimeout(double timeout);
++};
++
++#endif /* SUPPORT_METASMT */
++
+   /* *** */
+ 
+   /// createValidatingSolver - Create a solver which will validate all query
+@@ -219,8 +276,7 @@
+   /// createPCLoggingSolver - Create a solver which will forward all queries
+   /// after writing them to the given path in .pc format.
+   Solver *createPCLoggingSolver(Solver *s, std::string path,
+-                                int minQueryTimeToLog,
+-                                const InstructionInfoProvider *iip = NULL);
++                                int minQueryTimeToLog);
+ 
+   /// createSMTLIBLoggingSolver - Create a solver which will forward all queries
+   /// after writing them to the given path in .smt2 format.
+@@ -228,10 +284,6 @@
+                                     int minQueryTimeToLog);
+ 
+ 
+-  /// createTimeLoggingSolver - Create a solver which will forward all query times
+-  /// after writing them to the given path.
+-  Solver *createTimeLoggingSolver(Solver *s, std::string path, const InstructionInfoProvider *iip = NULL);
+-
+   /// createDummySolver - Create a dummy solver implementation which always
+   /// fails.
+   Solver *createDummySolver();
+diff -ur ../../zesti/include/klee/SolverImpl.h klee/SolverImpl.h
+--- ../../zesti/include/klee/SolverImpl.h	2017-09-18 15:21:39.684139500 +0800
++++ klee/SolverImpl.h	2017-09-14 19:58:17.000000000 +0800
+@@ -46,19 +46,44 @@
+     /// SolverImpl provides a default implementation which uses
+     /// computeTruth. Clients should override this if a more efficient
+     /// implementation is available.
++    ///
++    /// \param [out] result - if
++    /// \f[ \forall X constraints(X) \to query(X) \f]
++    /// then Solver::True,
++    /// else if
++    /// \f[ \forall X constraints(X) \to \lnot query(X) \f]
++    /// then Solver::False,
++    /// else
++    /// Solver::Unknown
++    ///
++    /// \return True on success
+     virtual bool computeValidity(const Query& query, Solver::Validity &result);
+     
+-    /// computeTruth - Determine whether the given query is provable.
++    /// computeTruth - Determine whether the given query expression is provably true
++    /// given the constraints.
+     ///
+     /// The query expression is guaranteed to be non-constant and have
+     /// bool type.
++    ///
++    /// This method should evaluate the logical formula:
++    ///
++    /// \f[ \forall X constraints(X) \to query(X) \f]
++    ///
++    /// Where \f$X\f$ is some assignment, \f$constraints(X)\f$ are the constraints
++    /// in the query and \f$query(X)\f$ is the query expression.
++    ///
++    /// \param [out] isValid - On success, true iff the logical formula is true.
++    /// \return True on success
+     virtual bool computeTruth(const Query& query, bool &isValid) = 0;
+ 
+     /// computeValue - Compute a feasible value for the expression.
+     ///
+     /// The query expression is guaranteed to be non-constant.
++    ///
++    /// \return True on success
+     virtual bool computeValue(const Query& query, ref<Expr> &result) = 0;
+     
++    /// \sa Solver::getInitialValues()
+     virtual bool computeInitialValues(const Query& query,
+                                       const std::vector<const Array*> 
+                                         &objects,
+@@ -68,10 +93,17 @@
+     
+     /// getOperationStatusCode - get the status of the last solver operation
+     virtual SolverRunStatus getOperationStatusCode() = 0;
+-    
++
+     /// getOperationStatusString - get string representation of the operation
+     /// status code
+     static const char* getOperationStatusString(SolverRunStatus statusCode);
++
++    virtual char *getConstraintLog(const Query& query)  {
++        // dummy
++        return(NULL);
++    }
++
++    virtual void setCoreSolverTimeout(double timeout) {};
+ };
+ 
+ }
+diff -ur ../../zesti/include/klee/Statistic.h klee/Statistic.h
+--- ../../zesti/include/klee/Statistic.h	2017-09-18 15:21:39.684260400 +0800
++++ klee/Statistic.h	2017-09-14 19:58:17.000000000 +0800
+@@ -11,11 +11,7 @@
+ #define KLEE_STATISTIC_H
+ 
+ #include "klee/Config/Version.h"
+-#if LLVM_VERSION_CODE < LLVM_VERSION(2, 9) && LLVM_VERSION_CODE >= LLVM_VERSION(2, 7)
+-#include "llvm/System/DataTypes.h"
+-#else
+ #include "llvm/Support/DataTypes.h"
+-#endif
+ #include <string>
+ 
+ namespace klee {
+diff -ur ../../zesti/include/klee/util/ArrayExprHash.h klee/util/ArrayExprHash.h
+--- ../../zesti/include/klee/util/ArrayExprHash.h	2017-09-18 15:21:39.684896400 +0800
++++ klee/util/ArrayExprHash.h	2017-09-14 19:58:57.000000000 +0800
+@@ -15,7 +15,15 @@
+ #include "SolverStats.h"
+ 
+ #include <map>
++
++#include <ciso646>
++#ifdef _LIBCPP_VERSION
++#include <unordered_map>
++#define unordered_map std::unordered_map
++#else
+ #include <tr1/unordered_map>
++#define unordered_map std::tr1::unordered_map
++#endif
+ 
+ namespace klee {
+   
+@@ -60,11 +68,11 @@
+   void hashUpdateNodeExpr(const UpdateNode* un, T& exp);  
+   
+ protected:
+-  typedef std::tr1::unordered_map<const Array*, T, ArrayHashFn, ArrayCmpFn> ArrayHash;
++  typedef unordered_map<const Array*, T, ArrayHashFn, ArrayCmpFn> ArrayHash;
+   typedef typename ArrayHash::iterator ArrayHashIter;
+   typedef typename ArrayHash::const_iterator ArrayHashConstIter;
+   
+-  typedef std::tr1::unordered_map<const UpdateNode*, T, UpdateNodeHashFn, UpdateNodeCmpFn> UpdateNodeHash;
++  typedef unordered_map<const UpdateNode*, T, UpdateNodeHashFn, UpdateNodeCmpFn> UpdateNodeHash;
+   typedef typename UpdateNodeHash::iterator UpdateNodeHashIter;
+   typedef typename UpdateNodeHash::const_iterator UpdateNodeHashConstIter;
+   
+@@ -132,4 +140,7 @@
+ 
+ }
+ 
+-#endif
+\ 文件尾没有 newline 字符
++#undef unordered_map
++#undef unordered_set
++
++#endif
+diff -ur ../../zesti/include/klee/util/Assignment.h klee/util/Assignment.h
+--- ../../zesti/include/klee/util/Assignment.h	2017-09-18 15:21:39.685073800 +0800
++++ klee/util/Assignment.h	2017-09-14 19:58:57.000000000 +0800
+@@ -11,7 +11,7 @@
+ #define KLEE_UTIL_ASSIGNMENT_H
+ 
+ #include <map>
+-#include <iostream>
++
+ #include "klee/util/ExprEvaluator.h"
+ 
+ // FIXME: Rename?
+@@ -29,14 +29,13 @@
+   public:
+     Assignment(bool _allowFreeValues=false) 
+       : allowFreeValues(_allowFreeValues) {}
+-    Assignment(std::vector<const Array*> &objects, 
++    Assignment(const std::vector<const Array*> &objects,
+                std::vector< std::vector<unsigned char> > &values,
+                bool _allowFreeValues=false) 
+       : allowFreeValues(_allowFreeValues){
+-       // std::cerr<<"in assignment second constructor\n";
+       std::vector< std::vector<unsigned char> >::iterator valIt = 
+         values.begin();
+-      for (std::vector<const Array*>::iterator it = objects.begin(),
++      for (std::vector<const Array*>::const_iterator it = objects.begin(),
+              ie = objects.end(); it != ie; ++it) {
+         const Array *os = *it;
+         std::vector<unsigned char> &arr = *valIt;
+@@ -61,22 +60,23 @@
+     }
+     
+   public:
+-    AssignmentEvaluator(const Assignment &_a) : a(_a) {}
++    AssignmentEvaluator(const Assignment &_a) : a(_a) {}    
+   };
+ 
+   /***/
+ 
+   inline ref<Expr> Assignment::evaluate(const Array *array, 
+                                         unsigned index) const {
++    assert(array);
+     bindings_ty::const_iterator it = bindings.find(array);
+     if (it!=bindings.end() && index<it->second.size()) {
+-      return ConstantExpr::alloc(it->second[index], Expr::Int8);
++      return ConstantExpr::alloc(it->second[index], array->getRange());
+     } else {
+       if (allowFreeValues) {
+         return ReadExpr::create(UpdateList(array, 0), 
+-                                ConstantExpr::alloc(index, Expr::Int32));
++                                ConstantExpr::alloc(index, array->getDomain()));
+       } else {
+-        return ConstantExpr::alloc(0, Expr::Int8);
++        return ConstantExpr::alloc(0, array->getRange());
+       }
+     }
+   }
+diff -ur ../../zesti/include/klee/util/BitArray.h klee/util/BitArray.h
+--- ../../zesti/include/klee/util/BitArray.h	2017-09-18 15:21:39.685199400 +0800
++++ klee/util/BitArray.h	2017-09-14 19:58:17.000000000 +0800
+@@ -31,14 +31,7 @@
+   }
+   ~BitArray() { delete[] bits; }
+ 
+-  bool get(unsigned idx) { 
+-//    std::cerr<<"BitArray get():\n";
+-//    std::cerr<<"bits: "<<*bits<<"\n";
+-//    std::cerr<<"bits["<<idx<<"/32]:"<<bits[idx/32]<<std::endl;
+-//    bool result=(bool)((bits[idx/32]>>(idx&0x1F))&1);
+-//    std::cerr<<"(bits[idx/32]>>(idx&0x1F))&1):"<<result<<std::endl;
+-      return (bool) ((bits[idx/32]>>(idx&0x1F))&1); 
+-  }
++  bool get(unsigned idx) { return (bool) ((bits[idx/32]>>(idx&0x1F))&1); }
+   void set(unsigned idx) { bits[idx/32] |= 1<<(idx&0x1F); }
+   void unset(unsigned idx) { bits[idx/32] &= ~(1<<(idx&0x1F)); }
+   void set(unsigned idx, bool value) { if (value) set(idx); else unset(idx); }
+diff -ur ../../zesti/include/klee/util/Bits.h klee/util/Bits.h
+--- ../../zesti/include/klee/util/Bits.h	2017-09-18 15:21:39.685326300 +0800
++++ klee/util/Bits.h	2017-09-14 19:58:57.000000000 +0800
+@@ -11,11 +11,7 @@
+ #define KLEE_UTIL_BITS_H
+ 
+ #include "klee/Config/Version.h"
+-#if LLVM_VERSION_CODE < LLVM_VERSION(2, 9) && LLVM_VERSION_CODE >= LLVM_VERSION(2, 7)
+-#include "llvm/System/DataTypes.h"
+-#else
+ #include "llvm/Support/DataTypes.h"
+-#endif
+ 
+ namespace klee {
+   namespace bits32 {
+diff -ur ../../zesti/include/klee/util/ExprHashMap.h klee/util/ExprHashMap.h
+--- ../../zesti/include/klee/util/ExprHashMap.h	2017-09-18 15:21:39.685596400 +0800
++++ klee/util/ExprHashMap.h	2017-09-14 19:58:17.000000000 +0800
+@@ -11,8 +11,19 @@
+ #define KLEE_EXPRHASHMAP_H
+ 
+ #include "klee/Expr.h"
++
++#include <ciso646>
++#ifdef _LIBCPP_VERSION
++#include <unordered_map>
++#include <unordered_set>
++#define unordered_map std::unordered_map
++#define unordered_set std::unordered_set
++#else
+ #include <tr1/unordered_map>
+ #include <tr1/unordered_set>
++#define unordered_map std::tr1::unordered_map
++#define unordered_set std::tr1::unordered_set
++#endif
+ 
+ namespace klee {
+ 
+@@ -33,16 +44,19 @@
+   template<class T> 
+   class ExprHashMap : 
+ 
+-    public std::tr1::unordered_map<ref<Expr>,
+-				   T,
+-				   klee::util::ExprHash,
+-				   klee::util::ExprCmp> {
++    public unordered_map<ref<Expr>,
++                         T,
++                         klee::util::ExprHash,
++                         klee::util::ExprCmp> {
+   };
+   
+-  typedef std::tr1::unordered_set<ref<Expr>,
+-				  klee::util::ExprHash,
+-				  klee::util::ExprCmp> ExprHashSet;
++  typedef unordered_set<ref<Expr>,
++                        klee::util::ExprHash,
++                        klee::util::ExprCmp> ExprHashSet;
+ 
+ }
+ 
++#undef unordered_map
++#undef unordered_set
++
+ #endif
+diff -ur ../../zesti/include/klee/util/ExprPPrinter.h klee/util/ExprPPrinter.h
+--- ../../zesti/include/klee/util/ExprPPrinter.h	2017-09-18 15:21:39.685764300 +0800
++++ klee/util/ExprPPrinter.h	2017-09-14 19:58:17.000000000 +0800
+@@ -12,6 +12,9 @@
+ 
+ #include "klee/Expr.h"
+ 
++namespace llvm {
++  class raw_ostream;
++}
+ namespace klee {
+   class ConstraintManager;
+ 
+@@ -20,11 +23,12 @@
+     ExprPPrinter() {}
+     
+   public:
+-    static ExprPPrinter *create(std::ostream &os);
++    static ExprPPrinter *create(llvm::raw_ostream &os);
+ 
+     virtual ~ExprPPrinter() {}
+ 
+     virtual void setNewline(const std::string &newline) = 0;
++    virtual void setForceNoLineBreaks(bool forceNoLineBreaks) = 0;
+     virtual void reset() = 0;
+     virtual void scan(const ref<Expr> &e) = 0;
+     virtual void print(const ref<Expr> &e, unsigned indent=0) = 0;
+@@ -44,7 +48,7 @@
+ 
+     /// printOne - Pretty print a single expression prefixed by a
+     /// message and followed by a line break.
+-    static void printOne(std::ostream &os, const char *message, 
++    static void printOne(llvm::raw_ostream &os, const char *message,
+                          const ref<Expr> &e);
+ 
+     /// printSingleExpr - Pretty print a single expression.
+@@ -54,12 +58,12 @@
+     /// Note that if the output stream is not positioned at the
+     /// beginning of a line then printing will not resume at the
+     /// correct position following any output line breaks.
+-    static void printSingleExpr(std::ostream &os, const ref<Expr> &e);
++    static void printSingleExpr(llvm::raw_ostream &os, const ref<Expr> &e);
+ 
+-    static void printConstraints(std::ostream &os,
++    static void printConstraints(llvm::raw_ostream &os,
+                                  const ConstraintManager &constraints);
+ 
+-    static void printQuery(std::ostream &os,
++    static void printQuery(llvm::raw_ostream &os,
+                            const ConstraintManager &constraints,
+                            const ref<Expr> &q,
+                            const ref<Expr> *evalExprsBegin = 0,
+diff -ur ../../zesti/include/klee/util/ExprRangeEvaluator.h klee/util/ExprRangeEvaluator.h
+--- ../../zesti/include/klee/util/ExprRangeEvaluator.h	2017-09-18 15:21:39.685951900 +0800
++++ klee/util/ExprRangeEvaluator.h	2017-09-14 19:58:17.000000000 +0800
+@@ -102,7 +102,7 @@
+     const ReadExpr *re = cast<ReadExpr>(e);
+     T index = evaluate(re->index);
+ 
+-    assert(re->getWidth()==Expr::Int8 && "unexpected multibyte read");
++    assert(re->updates.root && re->getWidth() == re->updates.root->range && "unexpected multibyte read");
+ 
+     return evalRead(re->updates, index);
+   }
+只在 ../../zesti/include/klee/util 存在：ExprSMTLIBLetPrinter.h
+diff -ur ../../zesti/include/klee/util/ExprSMTLIBPrinter.h klee/util/ExprSMTLIBPrinter.h
+--- ../../zesti/include/klee/util/ExprSMTLIBPrinter.h	2017-09-18 15:21:39.686282100 +0800
++++ klee/util/ExprSMTLIBPrinter.h	2017-09-14 19:58:17.000000000 +0800
+@@ -1,4 +1,5 @@
+-//===-- ExprSMTLIBPrinter.h ------------------------------------------*- C++ -*-===//
++//===-- ExprSMTLIBPrinter.h ------------------------------------------*- C++
++//-*-===//
+ //
+ //                     The KLEE Symbolic Virtual Machine
+ //
+@@ -10,7 +11,6 @@
+ #ifndef KLEE_EXPRSMTLIBPRINTER_H
+ #define KLEE_EXPRSMTLIBPRINTER_H
+ 
+-#include <ostream>
+ #include <string>
+ #include <set>
+ #include <map>
+@@ -19,278 +19,368 @@
+ #include <klee/util/PrintContext.h>
+ #include <klee/Solver.h>
+ 
+-namespace klee {
+-
+-	///Base Class for SMTLIBv2 printer for Expr trees. It uses the QF_ABV logic. Note however the logic can be
+-	///set to QF_AUFBV because some solvers (e.g. STP) complain if this logic is set to QF_ABV.
+-	///
+-	///This printer does not abbreviate expressions. The printer ExprSMTLIBLetPrinter does though.
+-	///
+-	/// It is intended to be used as follows
+-	/// -# Create instance of this class
+-	/// -# Set output ( setOutput() )
+-	/// -# Set query to print ( setQuery() )
+-	/// -# Set options using the methods prefixed with the word "set".
+-	/// -# Call generateOutput()
+-	///
+-	/// The class can then be used again on another query ( setQuery() ).
+-	/// The options set are persistent across queries (apart from setArrayValuesToGet() and PRODUCE_MODELS)
+-	class ExprSMTLIBPrinter
+-	{
+-		public:
+-
+-			///Different SMTLIBv2 logics supported by this class
+-			/// \sa setLogic()
+-			enum SMTLIBv2Logic
+-			{
+-				QF_ABV,  ///< Logic using Theory of Arrays and Theory of Bitvectors
+-				QF_AUFBV ///< Logic using Theory of Arrays and Theory of Bitvectors and has uninterpreted functions
+-			};
+-
+-			///Different SMTLIBv2 options that have a boolean value that can be set
+-			/// \sa setSMTLIBboolOption
+-			enum SMTLIBboolOptions
+-			{
+-				PRINT_SUCCESS, ///< print-success SMTLIBv2 option
+-				PRODUCE_MODELS,///< produce-models SMTLIBv2 option
+-				INTERACTIVE_MODE ///< interactive-mode SMTLIBv2 option
+-			};
+-
+-			///Different SMTLIBv2 bool option values
+-			/// \sa setSMTLIBboolOption
+-			enum SMTLIBboolValues
+-			{
+-				OPTION_TRUE, ///< Set option to true
+-				OPTION_FALSE, ///< Set option to false
+-				OPTION_DEFAULT ///< Use solver's defaults (the option will not be set in output)
+-			};
+-
+-			enum ConstantDisplayMode
+-			{
+-				BINARY,///< Display bit vector constants in binary e.g. #b00101101
+-				HEX, ///< Display bit vector constants in Hexidecimal e.g.#x2D
+-				DECIMAL ///< Display bit vector constants in Decimal e.g. (_ bv45 8)
+-			};
+-
+-			///Different supported SMTLIBv2 sorts (a.k.a type) in QF_AUFBV
+-			enum SMTLIB_SORT
+-			{
+-				SORT_BITVECTOR,
+-				SORT_BOOL
+-			};
+-
+-
+-
+-			///Allows the way Constant bitvectors are printed to be changed.
+-			///This setting is persistent across queries.
+-			/// \return true if setting the mode was successful
+-			bool setConstantDisplayMode(ConstantDisplayMode cdm);
+-
+-			ConstantDisplayMode getConstantDisplayMode() { return cdm;}
+-
+-			///Create a new printer that will print a query in the SMTLIBv2 language.
+-			ExprSMTLIBPrinter();
+-
+-			///Set the output stream that will be printed to.
+-			///This call is persistent across queries.
+-			void setOutput(std::ostream& output);
+-
+-			///Set the query to print. This will setArrayValuesToGet()
+-			///to none (i.e. no array values will be requested using
+-			///the SMTLIBv2 (get-value ()) command).
+-			void setQuery(const Query& q);
+-
+-			virtual ~ExprSMTLIBPrinter();
+-
+-			/// Print the query to the std::ostream
+-			/// setOutput() and setQuery() must be called before calling this.
+-			///
+-			/// All options should be set before calling this.
+-			/// \sa setConstantDisplayMode
+-			/// \sa setLogic()
+-			/// \sa setHumanReadable
+-			/// \sa setSMTLIBboolOption
+-			/// \sa setArrayValuesToGet
+-			///
+-			/// Mostly it does not matter what order the options are set in. However calling
+-			/// setArrayValuesToGet() implies PRODUCE_MODELS is set so, if a call to setSMTLIBboolOption()
+-			/// is made that uses the PRODUCE_MODELS before calling setArrayValuesToGet() then the setSMTLIBboolOption()
+-			/// call will be ineffective.
+-			virtual void generateOutput();
+-
+-			///Set which SMTLIBv2 logic to use.
+-			///This only affects what logic is used in the (set-logic <logic>) command.
+-			///The rest of the printed SMTLIBv2 commands are the same regardless of the logic used.
+-			///
+-			/// \return true if setting logic was successful.
+-			bool setLogic(SMTLIBv2Logic l);
+-
+-			///Sets how readable the printed SMTLIBv2 commands are.
+-			/// \param hr If set to true the printed commands are made more human readable.
+-			///
+-			/// The printed commands are made human readable by...
+-			/// - Indenting and line breaking.
+-			/// - Adding comments
+-			void setHumanReadable(bool hr);
+-
+-			///Set SMTLIB options.
+-			/// These options will be printed when generateOutput() is called via
+-			/// the SMTLIBv2 command (set-option :option-name <value>)
+-			///
+-			/// By default no options will be printed so the SMTLIBv2 solver will use
+-			/// its default values for all options.
+-			///
+-			/// \return true if option was successfully set.
+-			///
+-			/// The options set are persistent across calls to setQuery() apart from the
+-			/// PRODUCE_MODELS option which this printer may automatically set/unset.
+-			bool setSMTLIBboolOption(SMTLIBboolOptions option, SMTLIBboolValues value);
+-
+-			/// Set the array names that the SMTLIBv2 solver will be asked to determine.
+-			/// Calling this method implies the PRODUCE_MODELS option is true and will change
+-			/// any previously set value.
+-			///
+-			/// If no call is made to this function before ExprSMTLIBPrinter::generateOutput() then
+-			/// the solver will only be asked to check satisfiability.
+-			///
+-			/// If the passed vector is not empty then the values of those arrays will be requested
+-			/// via (get-value ()) SMTLIBv2 command in the output stream in the same order as vector.
+-			void setArrayValuesToGet(const std::vector<const Array*>& a);
+-
+-			/// \return True if human readable mode is switched on
+-			bool isHumanReadable();
+-
+-
+-		protected:
+-			///Contains the arrays found during scans
+-			std::set<const Array*> usedArrays;
+-
+-			///Output stream to write to
+-			std::ostream* o;
+-
+-			///The query to print
+-			const Query* query;
+-
+-			///Determine the SMTLIBv2 sort of the expression
+-			SMTLIB_SORT getSort(const ref<Expr>& e);
+-
+-			///Print an expression but cast it to a particular SMTLIBv2 sort first.
+-			void printCastToSort(const ref<Expr>& e, ExprSMTLIBPrinter::SMTLIB_SORT sort);
+-
+-			//Resets various internal objects for a new query
+-			virtual void reset();
+-
+-			//Scan all constraints and the query
+-			virtual void scanAll();
+-
+-			//Print an initial SMTLIBv2 comment before anything else is printed
+-			virtual void printNotice();
+-
+-			//Print SMTLIBv2 options e.g. (set-option :option-name <value>) command
+-			virtual void printOptions();
+-
+-			//Print SMTLIBv2 logic to use e.g. (set-logic QF_ABV)
+-			virtual void printSetLogic();
+-
+-			//Print SMTLIBv2 assertions for constant arrays
+-			virtual void printArrayDeclarations();
+-
+-			//Print SMTLIBv2 for all constraints in the query
+-			virtual void printConstraints();
+-
+-			//Print SMTLIBv2 assert statement for the "mangled" query
+-			virtual void printQuery();
+-
+-			///Print the SMTLIBv2 command to check satisfiability and also optionally request for values
+-			/// \sa setArrayValuesToGet()
+-			virtual void printAction();
+-
+-			///Print the SMTLIBv2 command to exit
+-			virtual void printExit();
+-
+-			///Print a Constant in the format specified by the current "Constant Display Mode"
+-			void printConstant(const ref<ConstantExpr>& e);
+-
+-			///Recursively print expression
+-			/// \param e is the expression to print
+-			/// \param expectedSort is the sort we want. If "e" is not of the right type a cast will be performed.
+-			virtual void printExpression(const ref<Expr>& e, ExprSMTLIBPrinter::SMTLIB_SORT expectedSort);
+-
+-			///Scan Expression recursively for Arrays in expressions. Found arrays are added to
+-			/// the usedArrays vector.
+-			virtual void scan(const ref<Expr>& e);
+-
+-			/* Rules of recursion for "Special Expression handlers" and printSortArgsExpr()
+-			 *
+-			 * 1. The parent of the recursion will have created an indent level for you so you don't need to add another initially.
+-			 * 2. You do not need to add a line break (via printSeperator() ) at the end, the parent caller will handle that.
+-			 * 3. The effect of a single recursive call should not affect the depth of the indent stack (nor the contents
+-			 *    of the indent stack prior to the call). I.e. After executing a single recursive call the indent stack
+-			 *    should have the same size and contents as before executing the recursive call.
+-			 */
+-
+-			//Special Expression handlers
+-			virtual void printReadExpr(const ref<ReadExpr>& e);
+-			virtual void printExtractExpr(const ref<ExtractExpr>& e);
+-			virtual void printCastExpr(const ref<CastExpr>& e);
+-			virtual void printNotEqualExpr(const ref<NeExpr>& e);
+-			virtual void printSelectExpr(const ref<SelectExpr>& e, ExprSMTLIBPrinter::SMTLIB_SORT s);
+-
+-			//For the set of operators that take sort "s" arguments
+-			virtual void printSortArgsExpr(const ref<Expr>& e, ExprSMTLIBPrinter::SMTLIB_SORT s);
+-
+-			///For the set of operators that come in two sorts (e.g. (and () ()) (bvand () ()) )
+-			///These are and,xor,or,not
+-			/// \param e the Expression to print
+-			/// \param s the sort of the expression we want
+-			virtual void printLogicalOrBitVectorExpr(const ref<Expr>& e, ExprSMTLIBPrinter::SMTLIB_SORT s);
+-
+-			///Recursively prints updatesNodes
+-			virtual void printUpdatesAndArray(const UpdateNode* un, const Array* root);
+-
+-			///This method does the translation between Expr classes and SMTLIBv2 keywords
+-			/// \return A C-string of the SMTLIBv2 keyword
+-			virtual const char* getSMTLIBKeyword(const ref<Expr>& e);
+-
+-			virtual void printSeperator();
+-
+-			///Helper function for scan() that scans the expressions of an update node
+-			virtual void scanUpdates(const UpdateNode* un);
+-
+-			///Helper printer class
+-			PrintContext* p;
+-
+-			///This contains the query from the solver but negated for our purposes.
+-			/// \sa mangleQuery()
+-			ref<Expr> queryAssert;
+-
+-			///Indicates if there were any constant arrays founds during a scan()
+-			bool haveConstantArray;
+-
+-
+-		private:
+-			SMTLIBv2Logic logicToUse;
+-
+-			volatile bool humanReadable;
+-
+-			//Map of enabled SMTLIB Options
+-			std::map<SMTLIBboolOptions,bool> smtlibBoolOptions;
+-
+-			///This sets queryAssert to be the boolean negation of the original Query
+-			void mangleQuery();
+-
+-			//Print a SMTLIBv2 option as a C-string
+-			const char* getSMTLIBOptionString(ExprSMTLIBPrinter::SMTLIBboolOptions option);
+-
+-			//Pointer to a vector of Arrays. These will be used for the (get-value () ) call.
+-			const std::vector<const Array*> * arraysToCallGetValueOn;
+-
+-			ConstantDisplayMode cdm;
+-
+-	};
+-
++namespace llvm {
++class raw_ostream;
++}
+ 
++namespace klee {
+ 
++/// Base Class for SMTLIBv2 printer for KLEE Queries. It uses the QF_ABV logic.
++/// Note however the logic can be
++/// set to QF_AUFBV because some solvers (e.g. STP) complain if this logic is
++/// set to QF_ABV.
++///
++/// This printer abbreviates expressions according to its abbreviation mode.
++///
++/// It is intended to be used as follows
++/// -# Create instance of this class
++/// -# Set output ( setOutput() )
++/// -# Set query to print ( setQuery() )
++/// -# Set options using the methods prefixed with the word "set".
++/// -# Call generateOutput()
++///
++/// The class can then be used again on another query ( setQuery() ).
++/// The options set are persistent across queries (apart from
++/// setArrayValuesToGet() and PRODUCE_MODELS).
++///
++///
++/// Note that in KLEE at the lowest level the solver checks for validity of the
++/// query, i.e.
++///
++/// \f[ \forall X constraints(X) \to query(X) \f]
++///
++/// Where \f$X\f$ is some assignment, \f$constraints(X)\f$ are the constraints
++/// in the query and \f$query(X)\f$ is the query expression.
++/// If the above formula is true the query is said to be **valid**, otherwise it
++/// is
++/// **invalid**.
++///
++/// The SMTLIBv2 language works in terms of satisfiability rather than validity
++/// so instead
++/// this class must ask the equivalent query but in terms of satisfiability
++/// which is:
++///
++/// \f[ \lnot \exists X constraints(X) \land \lnot query(X) \f]
++///
++/// The printed SMTLIBv2 query actually asks the following:
++///
++///  \f[ \exists X constraints(X) \land \lnot query(X) \f]
++/// Hence the printed SMTLIBv2 query will just assert the constraints and the
++/// negation
++/// of the query expression.
++///
++/// If a SMTLIBv2 solver says the printed query is satisfiable the then original
++/// query passed to this class was **invalid** and if a SMTLIBv2 solver says the
++/// printed
++/// query is unsatisfiable then the original query passed to this class was
++/// **valid**.
++///
++class ExprSMTLIBPrinter {
++public:
++  /// Different SMTLIBv2 logics supported by this class
++  /// \sa setLogic()
++  enum SMTLIBv2Logic {
++    QF_ABV,  ///< Logic using Theory of Arrays and Theory of Bitvectors
++    QF_AUFBV ///< Logic using Theory of Arrays and Theory of Bitvectors and has
++             ///< uninterpreted functions
++  };
++
++  /// Different SMTLIBv2 options that have a boolean value that can be set
++  /// \sa setSMTLIBboolOption
++  enum SMTLIBboolOptions {
++    PRINT_SUCCESS,   ///< print-success SMTLIBv2 option
++    PRODUCE_MODELS,  ///< produce-models SMTLIBv2 option
++    INTERACTIVE_MODE ///< interactive-mode SMTLIBv2 option
++  };
++
++  /// Different SMTLIBv2 bool option values
++  /// \sa setSMTLIBboolOption
++  enum SMTLIBboolValues {
++    OPTION_TRUE,   ///< Set option to true
++    OPTION_FALSE,  ///< Set option to false
++    OPTION_DEFAULT ///< Use solver's defaults (the option will not be set in
++                   ///< output)
++  };
++
++  enum ConstantDisplayMode {
++    BINARY, ///< Display bit vector constants in binary e.g. #b00101101
++    HEX,    ///< Display bit vector constants in Hexidecimal e.g.#x2D
++    DECIMAL ///< Display bit vector constants in Decimal e.g. (_ bv45 8)
++  };
++
++  /// How to abbreviate repeatedly mentioned expressions. Some solvers do not
++  /// understand all of them, hence the flexibility.
++  enum AbbreviationMode {
++    ABBR_NONE, ///< Do not abbreviate.
++    ABBR_LET,  ///< Abbreviate with let.
++    ABBR_NAMED ///< Abbreviate with :named annotations.
++  };
++
++  /// Different supported SMTLIBv2 sorts (a.k.a type) in QF_AUFBV
++  enum SMTLIB_SORT { SORT_BITVECTOR, SORT_BOOL };
++
++  /// Allows the way Constant bitvectors are printed to be changed.
++  /// This setting is persistent across queries.
++  /// \return true if setting the mode was successful
++  bool setConstantDisplayMode(ConstantDisplayMode cdm);
++
++  ConstantDisplayMode getConstantDisplayMode() { return cdm; }
++
++  void setAbbreviationMode(AbbreviationMode am) { abbrMode = am; }
++
++  /// Create a new printer that will print a query in the SMTLIBv2 language.
++  ExprSMTLIBPrinter();
++
++  /// Set the output stream that will be printed to.
++  /// This call is persistent across queries.
++  void setOutput(llvm::raw_ostream &output);
++
++  /// Set the query to print. This will setArrayValuesToGet()
++  /// to none (i.e. no array values will be requested using
++  /// the SMTLIBv2 (get-value ()) command).
++  void setQuery(const Query &q);
++
++  ~ExprSMTLIBPrinter();
++
++  /// Print the query to the llvm::raw_ostream
++  /// setOutput() and setQuery() must be called before calling this.
++  ///
++  /// All options should be set before calling this.
++  /// \sa setConstantDisplayMode
++  /// \sa setLogic()
++  /// \sa setHumanReadable
++  /// \sa setSMTLIBboolOption
++  /// \sa setArrayValuesToGet
++  ///
++  /// Mostly it does not matter what order the options are set in. However
++  /// calling
++  /// setArrayValuesToGet() implies PRODUCE_MODELS is set so, if a call to
++  /// setSMTLIBboolOption()
++  /// is made that uses the PRODUCE_MODELS before calling setArrayValuesToGet()
++  /// then the setSMTLIBboolOption()
++  /// call will be ineffective.
++  void generateOutput();
++
++  /// Set which SMTLIBv2 logic to use.
++  /// This only affects what logic is used in the (set-logic <logic>) command.
++  /// The rest of the printed SMTLIBv2 commands are the same regardless of the
++  /// logic used.
++  ///
++  /// \return true if setting logic was successful.
++  bool setLogic(SMTLIBv2Logic l);
++
++  /// Sets how readable the printed SMTLIBv2 commands are.
++  /// \param hr If set to true the printed commands are made more human
++  /// readable.
++  ///
++  /// The printed commands are made human readable by...
++  /// - Indenting and line breaking.
++  /// - Adding comments
++  void setHumanReadable(bool hr);
++
++  /// Set SMTLIB options.
++  /// These options will be printed when generateOutput() is called via
++  /// the SMTLIBv2 command (set-option :option-name <value>)
++  ///
++  /// By default no options will be printed so the SMTLIBv2 solver will use
++  /// its default values for all options.
++  ///
++  /// \return true if option was successfully set.
++  ///
++  /// The options set are persistent across calls to setQuery() apart from the
++  /// PRODUCE_MODELS option which this printer may automatically set/unset.
++  bool setSMTLIBboolOption(SMTLIBboolOptions option, SMTLIBboolValues value);
++
++  /// Set the array names that the SMTLIBv2 solver will be asked to determine.
++  /// Calling this method implies the PRODUCE_MODELS option is true and will
++  /// change
++  /// any previously set value.
++  ///
++  /// If no call is made to this function before
++  /// ExprSMTLIBPrinter::generateOutput() then
++  /// the solver will only be asked to check satisfiability.
++  ///
++  /// If the passed vector is not empty then the values of those arrays will be
++  /// requested
++  /// via (get-value ()) SMTLIBv2 command in the output stream in the same order
++  /// as vector.
++  void setArrayValuesToGet(const std::vector<const Array *> &a);
++
++  /// \return True if human readable mode is switched on
++  bool isHumanReadable();
++
++protected:
++  /// Contains the arrays found during scans
++  std::set<const Array *> usedArrays;
++
++  /// Set of expressions seen during scan.
++  std::set<ref<Expr> > seenExprs;
++
++  typedef std::map<const ref<Expr>, int> BindingMap;
++
++  /// Let expression binding number map. Under the :named abbreviation mode,
++  /// negative binding numbers indicate that the abbreviation has already been
++  /// emitted, so it may be used.
++  BindingMap bindings;
++
++  /// An ordered list of expression bindings.
++  /// Exprs in BindingMap at index i depend on Exprs in BindingMap at i-1.
++  /// Exprs in orderedBindings[0] have no dependencies.
++  std::vector<BindingMap> orderedBindings;
++
++  /// Output stream to write to
++  llvm::raw_ostream *o;
++
++  /// The query to print
++  const Query *query;
++
++  /// Determine the SMTLIBv2 sort of the expression
++  SMTLIB_SORT getSort(const ref<Expr> &e);
++
++  /// Print an expression but cast it to a particular SMTLIBv2 sort first.
++  void printCastToSort(const ref<Expr> &e, ExprSMTLIBPrinter::SMTLIB_SORT sort);
++
++  // Resets various internal objects for a new query
++  void reset();
++
++  // Scan all constraints and the query
++  void scanAll();
++
++  // Print an initial SMTLIBv2 comment before anything else is printed
++  void printNotice();
++
++  // Print SMTLIBv2 options e.g. (set-option :option-name <value>) command
++  void printOptions();
++
++  // Print SMTLIBv2 logic to use e.g. (set-logic QF_ABV)
++  void printSetLogic();
++
++  // Print SMTLIBv2 assertions for constant arrays
++  void printArrayDeclarations();
++
++  // Print SMTLIBv2 for the query optimised for human readability
++  void printHumanReadableQuery();
++
++  // Print SMTLIBv2 for the query optimised for minimal query size.
++  // This does not imply ABBR_LET or ABBR_NAMED (although it would be wise
++  // to use them to minimise the query size further)
++  void printMachineReadableQuery();
++
++  void printQueryInSingleAssert();
++
++  /// Print the SMTLIBv2 command to check satisfiability and also optionally
++  /// request for values
++  /// \sa setArrayValuesToGet()
++  void printAction();
++
++  /// Print the SMTLIBv2 command to exit
++  void printExit();
++
++  /// Print a Constant in the format specified by the current "Constant Display
++  /// Mode"
++  void printConstant(const ref<ConstantExpr> &e);
++
++  /// Recursively print expression
++  /// \param e is the expression to print
++  /// \param expectedSort is the sort we want. If "e" is not of the right type a
++  /// cast will be performed.
++  /// \param abbrMode the abbreviation mode to use for this expression
++  void printExpression(const ref<Expr> &e, SMTLIB_SORT expectedSort);
++
++  /// Scan Expression recursively for Arrays in expressions. Found arrays are
++  /// added to
++  /// the usedArrays vector.
++  void scan(const ref<Expr> &e);
++
++  /// Scan bindings for expression intra-dependencies. The result is written
++  /// to the orderedBindings vector that is later used for nested expression
++  /// printing in the let abbreviation mode.
++  void scanBindingExprDeps();
++
++  /* Rules of recursion for "Special Expression handlers" and
++   *printSortArgsExpr()
++   *
++   * 1. The parent of the recursion will have created an indent level for you so
++   *you don't need to add another initially.
++   * 2. You do not need to add a line break (via printSeperator() ) at the end,
++   *the parent caller will handle that.
++   * 3. The effect of a single recursive call should not affect the depth of the
++   *indent stack (nor the contents
++   *    of the indent stack prior to the call). I.e. After executing a single
++   *recursive call the indent stack
++   *    should have the same size and contents as before executing the recursive
++   *call.
++   */
++
++  // Special Expression handlers
++  void printReadExpr(const ref<ReadExpr> &e);
++  void printExtractExpr(const ref<ExtractExpr> &e);
++  void printCastExpr(const ref<CastExpr> &e);
++  void printNotEqualExpr(const ref<NeExpr> &e);
++  void printSelectExpr(const ref<SelectExpr> &e,
++                               ExprSMTLIBPrinter::SMTLIB_SORT s);
++  void printAShrExpr(const ref<AShrExpr> &e);
++
++  // For the set of operators that take sort "s" arguments
++  void printSortArgsExpr(const ref<Expr> &e,
++                                 ExprSMTLIBPrinter::SMTLIB_SORT s);
++
++  /// For the set of operators that come in two sorts (e.g. (and () ()) (bvand
++  /// () ()) )
++  /// These are and,xor,or,not
++  /// \param e the Expression to print
++  /// \param s the sort of the expression we want
++  void printLogicalOrBitVectorExpr(const ref<Expr> &e,
++                                           ExprSMTLIBPrinter::SMTLIB_SORT s);
++
++  /// Recursively prints updatesNodes
++  void printUpdatesAndArray(const UpdateNode *un, const Array *root);
++
++  /// This method does the translation between Expr classes and SMTLIBv2
++  /// keywords
++  /// \return A C-string of the SMTLIBv2 keyword
++  const char *getSMTLIBKeyword(const ref<Expr> &e);
++
++  void printSeperator();
++
++  /// Helper function for scan() that scans the expressions of an update node
++  void scanUpdates(const UpdateNode *un);
++
++  /// Helper printer class
++  PrintContext *p;
++
++  /// This contains the query from the solver but negated for our purposes.
++  /// \sa negateQueryExpression()
++  ref<Expr> queryAssert;
++
++  /// Indicates if there were any constant arrays founds during a scan()
++  bool haveConstantArray;
++
++private:
++  SMTLIBv2Logic logicToUse;
++
++  volatile bool humanReadable;
++
++  // Map of enabled SMTLIB Options
++  std::map<SMTLIBboolOptions, bool> smtlibBoolOptions;
++
++  // Print a SMTLIBv2 option as a C-string
++  const char *
++  getSMTLIBOptionString(ExprSMTLIBPrinter::SMTLIBboolOptions option);
++
++  /// Print expression without top-level abbreviations
++  void printFullExpression(const ref<Expr> &e, SMTLIB_SORT expectedSort);
++
++  /// Print an assert statement for the given expr.
++  void printAssert(const ref<Expr> &e);
++
++  // Pointer to a vector of Arrays. These will be used for the (get-value () )
++  // call.
++  const std::vector<const Array *> *arraysToCallGetValueOn;
++
++  ConstantDisplayMode cdm;
++  AbbreviationMode abbrMode;
++};
+ }
+ 
+ #endif
+diff -ur ../../zesti/include/klee/util/ExprVisitor.h klee/util/ExprVisitor.h
+--- ../../zesti/include/klee/util/ExprVisitor.h	2017-09-18 15:21:39.686539500 +0800
++++ klee/util/ExprVisitor.h	2017-09-14 19:58:17.000000000 +0800
+@@ -49,8 +49,6 @@
+     virtual Action visitExprPost(const Expr&);
+ 
+     virtual Action visitNotOptimized(const NotOptimizedExpr&);
+-    //Shadow expr
+-    virtual Action visitShadow(const ShadowExpr&);
+     virtual Action visitRead(const ReadExpr&);
+     virtual Action visitSelect(const SelectExpr&);
+     virtual Action visitConcat(const ConcatExpr&);
+diff -ur ../../zesti/include/klee/util/GetElementPtrTypeIterator.h klee/util/GetElementPtrTypeIterator.h
+--- ../../zesti/include/klee/util/GetElementPtrTypeIterator.h	2017-09-18 15:21:39.686696400 +0800
++++ klee/util/GetElementPtrTypeIterator.h	2017-09-14 19:58:57.000000000 +0800
+@@ -18,15 +18,21 @@
+ #ifndef KLEE_UTIL_GETELEMENTPTRTYPE_H
+ #define KLEE_UTIL_GETELEMENTPTRTYPE_H
+ 
+-#include "klee/Config/Version.h"
+-
++#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 3)
++#include "llvm/IR/User.h"
++#include "llvm/IR/DerivedTypes.h"
++#include "llvm/IR/Instructions.h"
++#include "llvm/IR/Constants.h"
++#else
+ #include "llvm/User.h"
+ #include "llvm/DerivedTypes.h"
+ #include "llvm/Instructions.h"
+-#include "klee/Config/Version.h"
+ #if LLVM_VERSION_CODE >= LLVM_VERSION(3, 0)
+ #include "llvm/Constants.h"
+ #endif
++#endif
++
++#include "klee/Config/Version.h"
+ 
+ namespace klee {
+   template<typename ItTy = llvm::User::const_op_iterator>
+diff -ur ../../zesti/include/klee/util/PrintContext.h klee/util/PrintContext.h
+--- ../../zesti/include/klee/util/PrintContext.h	2017-09-18 15:21:39.686827000 +0800
++++ klee/util/PrintContext.h	2017-09-14 19:58:57.000000000 +0800
+@@ -1,14 +1,14 @@
+ #ifndef PRINTCONTEXT_H_
+ #define PRINTCONTEXT_H_
+ 
+-#include <ostream>
++#include "klee/Expr.h"
++#include "llvm/Support/raw_ostream.h"
+ #include <sstream>
+ #include <string>
+ #include <stack>
+-#include <iomanip>
+ 
+ /// PrintContext - Helper class for pretty printing.
+-/// It provides a basic wrapper around std::ostream that keeps track of
++/// It provides a basic wrapper around llvm::raw_ostream that keeps track of
+ /// how many characters have been used on the current line.
+ ///
+ /// It also provides an optional way keeping track of the various levels of indentation
+@@ -16,8 +16,7 @@
+ /// \sa breakLineI() , \sa pushIndent(), \sa popIndent()
+ class PrintContext {
+ private:
+-  std::ostream &os;
+-  std::stringstream ss;
++  llvm::raw_ostream &os;
+   std::string newline;
+ 
+   ///This is used to keep track of the stack of indentations used by
+@@ -30,7 +29,7 @@
+   /// Number of characters on the current line.
+   unsigned pos;
+ 
+-  PrintContext(std::ostream &_os) : os(_os), newline("\n"), indentStack(), pos()
++  PrintContext(llvm::raw_ostream &_os) : os(_os), newline("\n"), indentStack(), pos()
+   {
+ 	  indentStack.push(pos);
+   }
+@@ -42,7 +41,7 @@
+   void breakLine(unsigned indent=0) {
+     os << newline;
+     if (indent)
+-      os << std::setw(indent) << ' ';
++      os.indent(indent) << ' ';
+     pos = indent;
+   }
+ 
+@@ -79,7 +78,8 @@
+ 
+   template <typename T>
+   PrintContext &operator<<(T elt) {
+-    ss.str("");
++    std::string str;
++    llvm::raw_string_ostream ss(str);
+     ss << elt;
+     write(ss.str());
+     return *this;
+diff -ur ../../zesti/include/klee/util/Ref.h klee/util/Ref.h
+--- ../../zesti/include/klee/util/Ref.h	2017-09-18 15:21:39.686966500 +0800
++++ klee/util/Ref.h	2017-09-14 19:58:17.000000000 +0800
+@@ -20,6 +20,10 @@
+ #include <assert.h>
+ #include <iosfwd> // FIXME: Remove this!!!
+ 
++namespace llvm {
++  class raw_ostream;
++}
++
+ namespace klee {
+ 
+ template<class T>
+@@ -107,7 +111,13 @@
+ };
+ 
+ template<class T>
+-inline std::ostream &operator<<(std::ostream &os, const ref<T> &e) {
++inline llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const ref<T> &e) {
++  os << *e;
++  return os;
++}
++
++template<class T>
++inline std::stringstream &operator<<(std::stringstream &os, const ref<T> &e) {
+   os << *e;
+   return os;
+ }
