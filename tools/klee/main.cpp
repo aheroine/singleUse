@@ -471,15 +471,17 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         std::string dive_info;
         if(errorMessage)
         {
-            if (!kTest_toFile(&b, getOutputFilename(getTestFilename("err.ktest", id)).c_str())) {
+            //jl modify the name to adapt macke's framwork
+	    //if (!kTest_toFile(&b, getOutputFilename(getTestFilename("err.ktest", id)).c_str())) {
+            if (!kTest_toFile(&b, getOutputFilename(getTestFilename("ktest", id)).c_str())) {
               klee_warning("unable to write output test case, losing it");
             }
         }
         else if(state.ctlordata){
-            if (!kTest_toFile(&b, getOutputFilename(getTestFilename("data.ktest", id)).c_str())) {
+            if (!kTest_toFile(&b, getOutputFilename(getTestFilename("ktest", id)).c_str())) {
               klee_warning("unable to write output test case, losing it");
             }
-            llvm::raw_ostream *f = openTestFile("info.data", id);
+            llvm::raw_ostream *f = openTestFile("data.err", id);
             *f << state.divmsg;
             delete f;
             if(is_print)
@@ -501,7 +503,7 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         }
         //  dive_info="data flow divergence";
         else{
-            if (!kTest_toFile(&b, getOutputFilename(getTestFilename("ctrl.ktest", id)).c_str())) {
+            if (!kTest_toFile(&b, getOutputFilename(getTestFilename("ktest", id)).c_str())) {
               klee_warning("unable to write output test case, losing it");
             }
             KInstruction * bufpc=state.prevPC;
@@ -520,7 +522,7 @@ void KleeHandler::processTestCase(const ExecutionState &state,
             ctrl_num++;
             if(bufpc->info->file!="")
                 klee_message("Divergence Instruction: file:%s line: %d test case id is: %d \n",bufpc->info->file.c_str(),bufpc->info->line,id);
-            llvm::raw_ostream *f = openTestFile("info.ctrl", id);
+            llvm::raw_ostream *f = openTestFile("ctrl.err", id);
             *f << state.divmsg;
             delete f;
         }
@@ -565,6 +567,8 @@ void KleeHandler::processTestCase(const ExecutionState &state,
       delete f;
     }
 
+    //jl: always write .pc
+    WritePCs=1;
     if (errorMessage || WritePCs) {
       std::string constraints;
       m_interpreter->getConstraintLog(state, constraints,Interpreter::KQUERY);

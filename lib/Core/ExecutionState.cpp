@@ -89,8 +89,10 @@ ExecutionState::ExecutionState(KFunction *kf) :
     instsSinceCovNew(0),
     coveredNew(false),
     forkDisabled(false),
-
-    haschanged(false),
+    
+    //jl change the initial value of haschanged
+    //haschanged(false),
+    haschanged(true),
     needTestCase(false),
     ctlordata(false),
     ctlAffected(false),
@@ -110,7 +112,9 @@ ExecutionState::ExecutionState(const std::vector<ref<Expr> > &assumptions)
     queryCost(0.),
     pcId(0),
 
-    haschanged(false),
+    //jl change the initial value of haschanged
+    //haschanged(false),
+    haschanged(true),
     needTestCase(false),
     ctlordata(false),
     ctlAffected(false),
